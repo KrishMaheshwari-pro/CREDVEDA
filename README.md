@@ -50,34 +50,35 @@ CredVeda/
 ├── templates/              # HTML templates
 ├── output/                 # Model outputs/reports
 └── README.md               # Project documentation
-🚀 Getting Started
-✅ Prerequisites
+
+##🚀 Getting Started
+## ✅ Prerequisites
 
 Python 3.9 or higher
 
 pip (Python package manager)
 
-📥 Installation
+## 📥 Installation
 # Clone the repository
 git clone https://github.com/your-username/CredVeda.git
 cd CredVeda
 
-# Create virtual environment (recommended)
+## Create virtual environment (recommended)
 python -m venv venv
 source venv/bin/activate   # Mac/Linux
 venv\Scripts\activate      # Windows
 
-# Install dependencies
+## Install dependencies
 pip install -r requirements.txt
 
-▶️ Run the Application
+##▶️ Run the Application
 python app.py
 
 
 Then open http://localhost:5000
  in your browser.
 
-📊 Usage
+##📊 Usage
 
 Upload or input borrower data
 
@@ -87,7 +88,7 @@ Explore the interactive dashboard for insights
 
 Chat with the AI assistant for guidance
 
-🔮 Future Enhancements
+##🔮 Future Enhancements
 
 🌍 Deploy to cloud (Heroku, AWS, Azure)
 
