@@ -34,45 +34,40 @@
 
 ## 📂 Project Structure
 
+```bash
 CredVeda/
-├── app.py # Main Flask app entry point
-├── chatbot.py # Chatbot assistant logic
-├── config.py # Configuration file
-├── dashboard.py # Dashboard endpoints
-├── data_ingestion.py # Data preprocessing pipeline
-├── database.py # Database connections
-├── model_training.py # Model training script
-├── scoring.py # Scoring and prediction logic
-├── credit_intelligence.db # SQLite database
-├── requirements.txt # Project dependencies
-├── static/ # Static files (CSS, JS)
-├── templates/ # HTML templates
-├── output/ # Model outputs/reports
-└── README.md # Project documentation
+├── app.py                  # Main Flask app entry point
+├── chatbot.py              # Chatbot assistant logic
+├── config.py               # Configuration file
+├── dashboard.py            # Dashboard endpoints
+├── data_ingestion.py       # Data preprocessing pipeline
+├── database.py             # Database connections
+├── model_training.py       # Model training script
+├── scoring.py              # Scoring and prediction logic
+├── credit_intelligence.db  # SQLite database
+├── requirements.txt        # Project dependencies
+├── static/                 # Static files (CSS, JS)
+├── templates/              # HTML templates
+├── output/                 # Model outputs/reports
+└── README.md               # Project documentation
+🚀 Getting Started
+✅ Prerequisites
 
----
+Python 3.9 or higher
 
-## 🚀 Getting Started
+pip (Python package manager)
 
-### ✅ Prerequisites
-- Python 3.9 or higher  
-- pip (Python package manager)  
+📥 Installation
+# Clone the repository
+git clone https://github.com/your-username/CredVeda.git
+cd CredVeda
 
-### 📥 Installation
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-username/CredVeda.git
-   cd CredVeda
-
-Create a virtual environment (recommended)
-
+# Create virtual environment (recommended)
 python -m venv venv
 source venv/bin/activate   # Mac/Linux
 venv\Scripts\activate      # Windows
 
-
-Install dependencies
-
+# Install dependencies
 pip install -r requirements.txt
 
 ▶️ Run the Application
@@ -92,13 +87,6 @@ Explore the interactive dashboard for insights
 
 Chat with the AI assistant for guidance
 
-📸 Screenshots (Optional)
-
-Add screenshots or GIFs of your app here:
-
-Dashboard	Chatbot
-
-	
 🔮 Future Enhancements
 
 🌍 Deploy to cloud (Heroku, AWS, Azure)
@@ -108,3 +96,8 @@ Dashboard	Chatbot
 📱 Mobile-friendly UI/UX improvements
 
 📡 Integration with real-world credit data APIs
+
+📜 License
+
+This project is licensed under the MIT License – see the LICENSE
+ file for details.
