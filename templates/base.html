@@ -1,0 +1,897 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{% block title %}CredVeda AI-Powered Credit Intelligence{% endblock %}</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        {% if session.get('logged_in') %}
+        <style>
+            
+    /* Floating button to open the chatbot */
+    #open-chatbot-btn {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        background-color: #2563eb;
+        color: white;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s ease-in-out, background-color 0.2s;
+    }
+    #open-chatbot-btn:hover {
+        transform: scale(1.1);
+        background-color: #1d4ed8;
+    }
+
+    /* Main chatbot window */
+    #chatbot-container {
+        position: fixed;
+        bottom: 100px;
+        right: 30px;
+        width: 360px;
+        max-width: 90vw;
+        height: 520px;
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 12px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: opacity 0.3s, transform 0.3s;
+        transform-origin: bottom right;
+    }
+    #chatbot-container.hidden {
+        opacity: 0;
+        transform: scale(0.5);
+        pointer-events: none;
+    }
+
+    /* Chatbot header section */
+    #chatbot-header {
+        background-color: #21262d;
+        color: #e6edf3;
+        padding: 15px;
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #30363d;
+    }
+    #close-chatbot-btn {
+        background: none;
+        border: none;
+        color: #e6edf3;
+        font-size: 24px;
+        cursor: pointer;
+    }
+
+    /* Message display area */
+    #chatbot-messages {
+        flex-grow: 1;
+        padding: 15px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .chatbot-message {
+        padding: 10px 15px;
+        border-radius: 18px;
+        max-width: 85%;
+        line-height: 1.5;
+        word-wrap: break-word;
+    }
+    .user-message {
+        background-color: #2563eb;
+        color: white;
+        align-self: flex-end;
+        border-bottom-right-radius: 4px;
+    }
+    .bot-message {
+        background-color: #30363d;
+        color: #e6edf3;
+        align-self: flex-start;
+        border-bottom-left-radius: 4px;
+    }
+    .bot-message a {
+        color: #58a6ff;
+        text-decoration: underline;
+    }
+    .bot-message a:hover {
+        color: #79c0ff;
+    }
+
+    /* Suggested Questions */
+    #chatbot-suggestions {
+        padding: 10px 15px 5px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        border-top: 1px solid #30363d;
+    }
+    .suggestion-btn {
+        background-color: #30363d;
+        color: #e6edf3;
+        border: 1px solid #444c56;
+        border-radius: 15px;
+        padding: 8px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background-color 0.2s, border-color 0.2s;
+    }
+    .suggestion-btn:hover {
+        background-color: #444c56;
+        border-color: #58a6ff;
+    }
+
+    /* Input area */
+    #chatbot-input-container {
+        display: flex;
+        padding: 15px;
+        border-top: 1px solid #30363d;
+        background-color: #21262d;
+    }
+    #chatbot-input {
+        flex-grow: 1;
+        border: 1px solid #30363d;
+        background-color: #0d1117;
+        color: #e6edf3;
+        border-radius: 6px;
+        padding: 10px;
+        margin-right: 10px;
+    }
+    #chatbot-send-btn {
+        background-color: #2563eb;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 0 15px;
+        cursor: pointer;
+        font-size: 16px;
+    }
+
+    /* Light Theme Adjustments */
+    body.light-theme #chatbot-container { background-color: #ffffff; border-color: #e2e8f0; }
+    body.light-theme #chatbot-header { background-color: #f0f2f5; color: #1a202c; border-color: #e2e8f0; }
+    body.light-theme #close-chatbot-btn { color: #1a202c; }
+    body.light-theme #chatbot-messages { background-color: #f9fafb; }
+    body.light-theme .bot-message { background-color: #e2e8f0; color: #1a202c; }
+    body.light-theme #chatbot-input-container { background-color: #f0f2f5; border-color: #e2e8f0; }
+    body.light-theme #chatbot-input { background-color: #ffffff; color: #1a202c; border-color: #cbd5e0; }
+    body.light-theme #chatbot-suggestions { border-color: #e2e8f0; }
+    body.light-theme .suggestion-btn { background-color: #e2e8f0; color: #1a202c; border-color: #cbd5e0; }
+    body.light-theme .suggestion-btn:hover { background-color: #cbd5e0; border-color: #007bff; }
+    
+        </style>
+        {% endif %}
+        <style>
+            /* Base styles for dark theme */
+            body { 
+                font-family: 'Inter', sans-serif; 
+                background-color: #0d1117; 
+                color: #e6edf3; 
+                margin: 0; 
+                padding: 0; 
+                font-size: 18px; /* Base font size increased for readability */
+                /* Dynamic Background Image */
+                background-image: url('https://images.unsplash.com/photo-1518458028782-cf817c18953e?q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=1920&h=1080&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'); /* Abstract tech/finance image */
+                background-size: cover;
+                background-position: center;
+                background-attachment: fixed; /* Makes background fixed when scrolling */
+                position: relative; /* Needed for overlay */
+            }
+            /* Background Overlay */
+            body::before {
+                content: '';
+                position: fixed; /* Use fixed to ensure it covers the whole viewport */
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.75); /* Darker overlay for better text contrast */
+                z-index: -1; /* Puts it behind content */
+            }
+
+            h1, h2, h3, h4, h5, h6 { 
+                color: #e6edf3; 
+                font-weight: bold; 
+                text-shadow: 0 0 5px rgba(230, 237, 243, 0.3); 
+                margin-bottom: 1em; /* Increased spacing */
+                line-height: 1.4; /* Better line height */
+            }
+            p, li, span, div:not(.logo):not(.fixed-header):not(.fixed-footer):not(.auth-container):not(.auth-form):not(.auth-toggle-text):not(.nav-links):not(.footer-links):not(.copyright) { 
+                color: #c0c0c0; /* Slightly lighter gray for general text */
+                font-size: 1.15em; /* Increased general text font size */
+                line-height: 1.7; /* Better line spacing */
+                margin-bottom: 1.2em; /* Increased paragraph spacing */
+            }
+            a { color: #58a6ff; text-decoration: none; }
+            a:hover { color: #79c0ff; text-decoration: underline; }
+
+            /* Light theme styles */
+            body.light-theme {
+                background-color: #f0f2f5;
+                color: #333;
+                background-image: url('https://images.unsplash.com/photo-1518458028782-cf817c18953e?q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=1920&h=1080&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'); /* Same image, but light theme overlay */
+            }
+            body.light-theme::before {
+                background-color: rgba(255, 255, 255, 0.85); /* Lighter, more opaque overlay for readability */
+            }
+            body.light-theme h1, body.light-theme h2, body.light-theme h3, body.light-theme h4, body.light-theme h5, body.light-theme h6 {
+                color: #1a202c;
+                text-shadow: none;
+            }
+            body.light-theme p, body.light-theme li, body.light-theme span, body.light-theme div:not(.logo):not(.fixed-header):not(.fixed-footer):not(.auth-container):not(.auth-form):not(.auth-toggle-text):not(.nav-links):not(.footer-links):not(.copyright) {
+                color: #4a5568;
+            }
+            body.light-theme .fixed-header, body.light-theme .fixed-footer, body.light-theme .bg-dark-card, body.light-theme .auth-form, body.light-theme .table-auto, body.light-theme .table-auto th, body.light-theme .table-auto tbody tr:hover, body.light-theme .auth-form input, body.light-theme .auth-form button, body.light-theme .auth-form .auth-toggle-text a, body.light-theme .tab-button, body.light-theme .tab-button.active {
+                background-color: #ffffff;
+                color: #333;
+                border-color: #e2e8f0;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            }
+            body.light-theme .fixed-header .logo, body.light-theme .fixed-header .nav-links a, body.light-theme .fixed-footer .logo, body.light-theme .fixed-footer .footer-links a, body.light-theme .fixed-footer .copyright {
+                color: #1a202c;
+            }
+            body.light-theme .fixed-header .nav-links a:hover, body.light-theme .fixed-footer .footer-links a:hover {
+                color: #007bff;
+            }
+            body.light-theme .btn-primary {
+                background-color: #007bff;
+                color: white;
+            }
+            body.light-theme .btn-primary:hover {
+                background-color: #0056b3;
+            }
+            body.light-theme .text-blue-accent { color: #007bff; }
+            body.light-theme .text-green-accent { color: #28a745; }
+            body.light-theme .text-red-accent { color: #dc3545; }
+            body.light-theme .bg-gray-700 { background-color: #f0f2f5; } /* For selectbox/input background */
+            body.light-theme .text-gray-700 { color: #4a5568; } /* For selectbox/input text */
+            body.light-theme .border-gray-600 { border-color: #cbd5e0; }
+            body.light-theme .bg-gray-800 { background-color: #e2e8f0; } /* For chart backgrounds */
+            body.light-theme .bg-red-900 { background-color: #fed7d7; } /* Error alert */
+            body.light-theme .border-red-700 { border-color: #fc8181; }
+            body.light-theme .text-red-300 { color: #c53030; }
+            body.light-theme .bg-green-900 { background-color: #c6f6d5; } /* Success alert */
+            body.light-theme .border-green-700 { border-color: #68d391; }
+            body.light-theme .text-green-300 { color: #2f855a; }
+            body.light-theme .auth-form input {
+                background-color: #f0f2f5;
+                color: #333;
+            }
+            body.light-theme .auth-form label {
+                color: #1a202c; /* Dark color for labels in light mode */
+            }
+            body.light-theme .auth-form button {
+                background-color: #007bff;
+                color: white;
+            }
+            body.light-theme .auth-form button:hover {
+                background-color: #0056b3;
+            }
+            body.light-theme .auth-toggle-text a {
+                color: #007bff;
+            }
+            body.light-theme .tab-button.active {
+                border-color: #007bff;
+            }
+
+
+            /* Dropdown/Select Box Styling */
+            select {
+                background-color: #21262d; /* Dark background for select */
+                color: #e6edf3; /* White text for select */
+                border: 1px solid #30363d;
+            }
+            body.light-theme select {
+                background-color: #f0f2f5; /* Light background for select */
+                color: #1a202c; /* Black text for select */
+                border-color: #cbd5e0;
+            }
+
+            /* Fixed Header Styling */
+            .fixed-header {
+                position: fixed; top: 0; left: 0; width: 100%; background-color: #0d1117; padding: 10px 20px; /* Reduced horizontal padding */
+                display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+                z-index: 1000; border-bottom: 1px solid #30363d; height: 70px;
+            }
+            .fixed-header .logo { display: flex; align-items: center; font-size: 1.8em; font-weight: bold; color: #e6edf3; }
+            .fixed-header .logo img { height: 40px; margin-right: 10px; border-radius: 5px; }
+            .fixed-header .nav-links a { color: #e6edf3; text-decoration: none; margin-left: 15px; font-size: 1.0em; transition: color 0.2s ease-in-out; } /* Reduced margin and font size */
+            .fixed-header .nav-links a:hover { color: #58a6ff; }
+            
+            .main-content { padding-top: 80px; padding-bottom: 20px; min-height: calc(100vh - 220px); } /* Adjusted for new footer height */
+
+            .site-footer {
+                background-color: #0d1117;
+                color: #e6edf3;
+                padding: 40px 50px; /* Increased padding for more height */
+                border-top: 1px solid #30363d;
+                margin-top: 60px; /* More space above the footer */
+            }
+            .footer-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 30px;
+                margin-bottom: 30px;
+            }
+            .footer-column h4 {
+                font-size: 1.1em;
+                font-weight: bold;
+                color: #58a6ff;
+                margin-bottom: 15px;
+            }
+            .footer-column p, .footer-column a {
+                font-size: 0.9em;
+                color: #8b949e;
+                text-decoration: none;
+                display: block;
+                margin-bottom: 8px;
+            }
+            .footer-column a:hover {
+                color: #79c0ff;
+                text-decoration: underline;
+            }
+            .footer-disclaimer {
+                font-size: 0.8em;
+                color: #8b949e;
+                text-align: center;
+                border-top: 1px solid #30363d;
+                padding-top: 20px;
+                margin-top: 20px;
+            }
+
+            /* General content styling */
+            .container { max-width: 1200px; margin-left: auto; margin-right: auto; padding-left: 1rem; padding-right: 1rem; }
+            h1, h2, h3, h4, h5, h6 { color: #e6edf3; font-weight: bold; text-shadow: 0 0 5px rgba(230, 237, 243, 0.3); }
+            p, li { color: #8b949e; }
+            .bg-dark-card { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); padding: 20px; }
+            .text-blue-accent { color: #58a6ff; }
+            .text-green-accent { color: #28a745; }
+            .text-red-accent { color: #dc3545; }
+            .btn-primary { background-color: #007bff; color: white; border-radius: 8px; padding: 12px 25px; font-size: 1.1em; transition: background-color 0.2s; }
+            .btn-primary:hover { background-color: #0056b3; }
+            .table-auto { width: 100%; border-collapse: collapse; }
+            .table-auto th, .table-auto td { padding: 12px; text-align: left; border-bottom: 1px solid #30363d; }
+            .table-auto th { background-color: #21262d; color: #58a6ff; font-weight: bold; }
+            .table-auto tbody tr:hover { background-color: #1a1f26; }
+            .text-center { text-align: center; }
+
+            /* Auth Form Styling - Adjusted for smaller inputs and better UI */
+            .auth-container {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 70vh;
+                padding: 20px;
+            }
+            .auth-form {
+                background-color: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 12px;
+                padding: 30px; /* Reduced padding */
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+                width: 100%;
+                max-width: 350px; /* Reduced max-width */
+                text-align: center;
+            }
+            .auth-form h2 {
+                color: #58a6ff;
+                margin-bottom: 20px; /* Reduced margin */
+                font-size: 1.8em; /* Adjusted font size */
+            }
+            .auth-form p {
+                font-size: 0.9em; /* Smaller text */
+                margin-bottom: 25px; /* Adjusted margin */
+            }
+            .auth-form label {
+                color: #e6edf3;
+                font-size: 0.9em; /* Smaller label font */
+                margin-bottom: 5px;
+                display: block;
+                text-align: left;
+            }
+            .auth-form input {
+                width: calc(100% - 16px); /* Adjusted width for padding */
+                padding: 8px; /* Smaller padding */
+                margin-bottom: 15px; /* Reduced margin */
+                font-size: 0.9em; /* Smaller input font */
+                background-color: #21262d;
+                color: #e6edf3;
+                border: 1px solid #30363d;
+                border-radius: 6px; /* Slightly smaller border radius */
+            }
+            .auth-form button {
+                width: 100%;
+                padding: 10px;
+                font-size: 1em;
+                border-radius: 6px;
+                background-color: #2563eb; /* Blue background */
+                color: white;
+                transition: background-color 0.2s;
+            }
+            .auth-form button:hover {
+                background-color: #1d4ed8; /* Darker blue on hover */
+            }
+            .auth-toggle-text {
+                color: #8b949e;
+                margin-top: 15px; /* Reduced margin */
+                font-size: 0.8em; /* Smaller text */
+            }
+            .auth-toggle-text a {
+                color: #58a6ff;
+                cursor: pointer;
+                text-decoration: none;
+            }
+            .auth-toggle-text a:hover {
+                text-decoration: underline;
+            }
+
+            .auth-video-background {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                object-fit: cover;
+                z-index: -2; /* Behind the body::before overlay */
+            }
+
+            /* Theme Toggle Button */
+            .theme-toggle {
+                background-color: #21262d;
+                color: #e6edf3;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                padding: 8px 12px;
+                cursor: pointer;
+                transition: background-color 0.2s, color 0.2s;
+                font-size: 0.9em;
+            }
+            .theme-toggle:hover {
+                background-color: #30363d;
+                color: #79c0ff;
+            }
+            .fixed-header .header-right {
+                display: flex;
+                align-items: center;
+                gap: 20px; /* Space between nav links and theme toggle */
+            }
+
+            /* --- New Styles for Animated Auth Pages --- */
+
+            /* Animated Gradient Background for Auth Pages */
+            @keyframes gradient-animation {
+                0% { background-position: 0% 50%; }
+                50% { background-position: 100% 50%; }
+                100% { background-position: 0% 50%; }
+            }
+
+            /* New Auth Page Layout */
+            .auth-page-container {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                align-items: center;
+                min-height: calc(100vh - 70px); /* Full height minus header */
+                padding: 0 50px;
+                gap: 40px;
+            }
+
+            .auth-intro-text {
+                text-align: left;
+                color: #e6edf3;
+            }
+
+            .auth-intro-text h1 {
+                font-size: 4.5em; /* Larger font size */
+                font-weight: bold;
+                color: #e6edf3;
+                margin-bottom: 20px;
+                text-shadow: 0 0 15px rgba(88, 166, 255, 0.5);
+            }
+
+            .auth-intro-text p {
+                font-size: 1.5em;
+                color: #8b949e;
+                max-width: 500px;
+            }
+
+            /* Typing Animation */
+            .typing-effect {
+                display: inline-block;
+                overflow: hidden;
+                white-space: nowrap;
+                border-right: .12em solid #58a6ff; /* The typewriter cursor */
+                animation: typing-untyping 4s steps(9, end) infinite;
+            }
+            
+            .typing-effect.p-typing {
+                /* Adjust timing for the longer paragraph */
+                animation: typing-untyping 7s steps(54, end) infinite;
+            }
+
+            /* A more realistic typing animation with a pause and blinking caret */
+            @keyframes typing-untyping {
+                0%, 100% { 
+                    width: 0; /* Start and end with no text */
+                }
+                40%, 60% { 
+                    width: 100%; /* Stay fully typed for a pause */
+                }
+                /* Blinking effect during the pause */
+                45% { border-color: transparent; }
+                50% { border-color: #58a6ff; }
+                55% { border-color: transparent; }
+            }
+
+            @keyframes blink-caret {
+                from, to { border-color: transparent; }
+                50% { border-color: #58a6ff; }
+            }
+            
+            /* Ensure the auth form is centered in its column */
+            .auth-container {
+                justify-content: center;
+                width: 100%;
+            }
+
+            /* Base styles for dark theme */
+body {
+    /* ... existing styles ... */
+    font-size: 15px; /* Reduced base font size for overall readability */
+}
+
+/* Adjusted font sizes for various text elements */
+h1, h2, h3, h4, h5, h6 {
+    /* ... existing styles ... */
+    font-size: 1.8em; /* Example: h1 will be 1.8 * 15px = 27px */
+    line-height: 1.3;
+    margin-bottom: 0.8em; /* Slightly less spacing for headers */
+}
+
+/* General text, paragraphs, list items */
+p, li, span, div:not(.logo):not(.fixed-header):not(.fixed-footer):not(.auth-container):not(.auth-form):not(.auth-toggle-text):not(.nav-links):not(.footer-links):not(.copyright) {
+    color: #c0c0c0;
+    font-size: 0.95em; /* Slightly smaller than base font size (0.95 * 15px = 14.25px) */
+    line-height: 1.6; /* Adjusted line spacing */
+    margin-bottom: 1em; /* Adjusted paragraph spacing */
+}
+
+/* Specific adjustments for landing page titles */
+.landing-title {
+    /* ... existing styles ... */
+    font-size: 3em; /* Smaller than previous 3.5em */
+    margin-bottom: 15px; /* Adjust spacing */
+}
+.landing-subtitle {
+    /* ... existing styles ... */
+    font-size: 1.3em; /* Smaller than previous 1.5em */
+    margin-bottom: 30px; /* Adjust spacing */
+}
+
+/* Specific adjustments for auth forms */
+.auth-form h2 {
+    /* ... existing styles ... */
+    font-size: 1.6em; /* Smaller heading in auth form */
+}
+.auth-form p {
+    /* ... existing styles ... */
+    font-size: 0.85em; /* Smaller text in auth form */
+}
+.auth-form label {
+    /* ... existing styles ... */
+    font-size: 0.8em; /* Smaller label font in auth form */
+}
+.auth-form input {
+    /* ... existing styles ... */
+    font-size: 0.85em; /* Smaller input font in auth form */
+}
+.auth-form button {
+    /* ... existing styles ... */
+    font-size: 0.9em; /* Smaller button font in auth form */
+}
+.auth-toggle-text {
+    /* ... existing styles ... */
+    font-size: 0.75em; /* Smaller toggle text in auth form */
+}
+
+/* Adjustments for dashboard metrics */
+[data-testid="stMetricValue"] {
+    font-size: 2.2rem; /* Adjusted for better fit */
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.9em; /* Adjusted for better fit */
+}
+[data-testid="stMetricDelta"] {
+    font-size: 1.1rem; /* Adjusted for better fit */
+}
+
+/* Adjustments for header/footer links */
+.fixed-header .nav-links a {
+    font-size: 1em; /* Relative to body font size */
+}
+.fixed-footer .footer-links a {
+    font-size: 0.85em; /* Slightly smaller for footer links */
+}
+.fixed-footer .copyright {
+    font-size: 0.75em; /* Slightly smaller for copyright */
+}
+        </style>
+        {% block head_extra %}{% endblock %}
+    </head>
+    <body class="{ 'light-theme' if session.get('theme') == 'light' else '' }">
+        {% if session.get('logged_in') %}
+            
+    <!-- Chatbot container that will be injected into the page -->
+    <div id="chatbot-container" class="hidden">
+        <div id="chatbot-header">
+            <span>CredVeda Assistant</span>
+            <button id="close-chatbot-btn" aria-label="Close Chatbot">&times;</button>
+        </div>
+        <div id="chatbot-messages">
+            <!-- Messages will be dynamically added here -->
+        </div>
+        <div id="chatbot-suggestions">
+            <!-- Suggested questions will be dynamically added here -->
+        </div>
+        <div id="chatbot-input-container">
+            <input type="text" id="chatbot-input" placeholder="Ask a question..." aria-label="Chatbot Input">
+            <button id="chatbot-send-btn" aria-label="Send Message">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
+    </div>
+    <!-- Button to open the chatbot -->
+    <button id="open-chatbot-btn" aria-label="Open Chatbot">
+        <i class="fas fa-comment-dots"></i>
+    </button>
+    
+        {% endif %}
+        <div class="fixed-header">
+            <div class="logo">
+                <img src="https://placehold.co/40x40/58a6ff/0d1117?text=CV" alt="CredVeda Logo">
+                CredVeda
+            </div>
+            <div class="header-right">
+                <div class="nav-links">
+                    <a href="{{ url_for('home') }}">Home</a>
+                    <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
+                    <a href="{{ url_for('ai_features_page') }}">AI Features</a>
+                    <a href="{{ url_for('about_page') }}">About</a>
+                    {% if session.get('logged_in') %}
+                        <a href="{{ url_for('logout') }}">Logout ({{ session.get('username') }})</a>
+                    {% else %}
+                        <a href="{{ url_for('login') }}">Login</a>
+                    {% endif %}
+                </div>
+                <button class="theme-toggle" onclick="toggleTheme()">
+                    {% if session.get('theme') == 'light' %}
+                        🌙 Dark Mode
+                    {% else %}
+                        ☀️ Light Mode
+                    {% endif %}
+                </button>
+            </div>
+        </div>
+
+        <div class="main-content container">
+            {% block content %}{% endblock %}
+        </div>
+
+        {% block footer_content %}
+        <footer class="site-footer">
+            <div class="footer-grid">
+                <div class="footer-column">
+                    <h4>CredVeda</h4>
+                    <p>AI-Powered Credit Intelligence to help you make smarter, faster, and more transparent decisions in the global credit markets.</p>
+                </div>
+                <div class="footer-column">
+                    <h4>Quick Links</h4>
+                    <a href="{{ url_for('home') }}">Home</a>
+                    <a href="{{ url_for('dashboard_page') }}">Dashboard</a>
+                    <a href="{{ url_for('ai_features_page') }}">AI Features</a>
+                    <a href="{{ url_for('about_page') }}">About Us</a>
+                </div>
+                <div class="footer-column">
+                    <h4>Legal</h4>
+                    <a href="{{ url_for('privacy_page') }}">Privacy Policy</a>
+                    <a href="{{ url_for('terms_page') }}">Terms of Service</a>
+                    <a href="{{ url_for('contact_page') }}">Contact Us</a>
+                </div>
+                <div class="footer-column">
+                    <h4>Connect</h4>
+                    <a href="#">LinkedIn</a>
+                    <a href="#">Twitter</a>
+                    <p class="mt-4">contact@credveda.com</p>
+                </div>
+            </div>
+            <div class="footer-disclaimer">
+                © 2025 CredVeda. All Rights Reserved. The information provided by this platform is for informational purposes only and does not constitute financial advice.
+            </div>
+        </footer>
+        {% endblock %}
+
+        {% block scripts %}{% endblock %}
+
+        <script>
+            {% if session.get('logged_in') %}
+            
+    document.addEventListener('DOMContentLoaded', () => {
+        const openBtn = document.getElementById('open-chatbot-btn');
+        const closeBtn = document.getElementById('close-chatbot-btn');
+        const container = document.getElementById('chatbot-container');
+        const sendBtn = document.getElementById('chatbot-send-btn');
+        const input = document.getElementById('chatbot-input');
+        const messagesContainer = document.getElementById('chatbot-messages');
+        const suggestionsContainer = document.getElementById('chatbot-suggestions');
+
+        if (!openBtn || !closeBtn || !container || !sendBtn || !input || !messagesContainer || !suggestionsContainer) {
+            console.error('Chatbot elements not found!');
+            return;
+        }
+
+        const chatbotData = {
+            'default': "I'm sorry, I didn't quite understand that. You can ask me about CredVeda's features, how credit scoring works, or how to contact support.",
+            'greeting': "Hello! I'm the CredVeda assistant. How can I help you today? Here are a few things you can ask:",
+            'features': "CredVeda uses AI for predictive credit scoring (XGBoost), provides transparent explanations (XAI with SHAP), analyzes news sentiment (NLP), and sends real-time anomaly alerts. You can learn more on the <a href='/ai-features'>AI Features</a> page.",
+            'scoring': "Our credit scoring is powered by an XGBoost machine learning model. It analyzes financial data, market trends, and news sentiment to generate a score. We use SHAP to explain how each factor contributes to the score.",
+            'dashboard': "The dashboard provides a real-time overview of a company's credit score, market volatility, and macroeconomic indicators. You can explore score trends over time and see a detailed breakdown of what influences the score.",
+            'contact': "You can reach our support team by visiting the <a href='/contact'>Contact Us</a> page. We're happy to help!",
+            'bye': "Goodbye! Feel free to ask if you have more questions."
+        };
+
+        const keywords = {
+            'features': ['feature', 'capability', 'what can you do', "what are credveda's features?"],
+            'scoring': ['score', 'scoring', 'how it works', 'xgboost', 'shap', 'model', 'how does credit scoring work?'],
+            'dashboard': ['dashboard', 'chart', 'graph', 'insight'],
+            'contact': ['contact', 'support', 'help', 'email', 'phone', 'how can i contact support?'],
+            'greeting': ['hello', 'hi', 'hey', 'yo'],
+            'bye': ['bye', 'goodbye', 'see you', 'later']
+        };
+
+        const suggestedQuestions = [
+            "What are CredVeda's features?",
+            "How does credit scoring work?",
+            "How can I contact support?"
+        ];
+
+        function renderSuggestions() {
+            suggestionsContainer.innerHTML = '';
+            suggestedQuestions.forEach(q => {
+                const btn = document.createElement('button');
+                btn.className = 'suggestion-btn';
+                btn.textContent = q;
+                btn.addEventListener('click', () => {
+                    input.value = q;
+                    handleUserInput();
+                });
+                suggestionsContainer.appendChild(btn);
+            });
+            suggestionsContainer.style.display = 'flex';
+        }
+
+        function hideSuggestions() {
+            suggestionsContainer.style.display = 'none';
+        }
+
+        function getBotResponse(userInput) {
+            const lowerInput = userInput.toLowerCase();
+            for (const key in keywords) {
+                for (const keyword of keywords[key]) {
+                    if (lowerInput.includes(keyword)) {
+                        return chatbotData[key];
+                    }
+                }
+            }
+            return chatbotData['default'];
+        }
+
+        function addMessage(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chatbot-message ${sender}-message`;
+            messageDiv.innerHTML = text; // Use innerHTML to render potential links
+            messagesContainer.appendChild(messageDiv);
+            // Scroll to the bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function handleUserInput() {
+            const userInput = input.value.trim();
+            if (userInput) {
+                addMessage(userInput, 'user');
+                const botResponse = getBotResponse(userInput);
+                // Simulate bot thinking
+                setTimeout(() => addMessage(botResponse, 'bot'), 500);
+                input.value = '';
+                hideSuggestions(); // Hide suggestions after first interaction
+            }
+        }
+
+        openBtn.addEventListener('click', () => {
+            container.classList.remove('hidden');
+            // Show suggestions only if the conversation has just started
+            if (messagesContainer.children.length <= 1) {
+                renderSuggestions();
+            }
+        });
+        closeBtn.addEventListener('click', () => container.classList.add('hidden'));
+        sendBtn.addEventListener('click', handleUserInput);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleUserInput();
+            }
+        });
+        
+        // Add an initial greeting message after a short delay
+        setTimeout(() => {
+            if (messagesContainer.children.length === 0) {
+                 addMessage(chatbotData['greeting'], 'bot');
+                 renderSuggestions();
+            }
+        }, 1500);
+    });
+    
+            {% endif %}
+            // Theme toggle JavaScript
+            function toggleTheme() {
+                const body = document.body;
+                const currentTheme = body.classList.contains('light-theme') ? 'light' : 'dark';
+                const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+                
+                // Send request to Flask backend to update session
+                fetch('/set_theme', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ theme: newTheme })
+                }).then(response => {
+                    if (response.ok) {
+                        body.classList.toggle('light-theme');
+                        // Update button text
+                        const themeToggleButton = document.querySelector('.theme-toggle');
+                        if (newTheme === 'light') {
+                            themeToggleButton.innerHTML = '🌙 Dark Mode';
+                        } else {
+                            themeToggleButton.innerHTML = '☀️ Light Mode';
+                        }
+                    }
+                }).catch(error => console.error('Error toggling theme:', error));
+            }
+
+            // Set initial theme based on session on page load
+            document.addEventListener('DOMContentLoaded', () => {
+                const savedTheme = "{{ session.get('theme', 'dark') }}"; // Default to dark
+                if (savedTheme === 'light') {
+                    document.body.classList.add('light-theme');
+                }
+                // Update button text on load
+                const themeToggleButton = document.querySelector('.theme-toggle');
+                if (themeToggleButton) {
+                    if (savedTheme === 'light') {
+                        themeToggleButton.innerHTML = '🌙 Dark Mode';
+                    } else {
+                        themeToggleButton.innerHTML = '☀️ Light Mode';
+                    }
+                }
+            });
+        </script>
+    </body>
+    </html>
+    

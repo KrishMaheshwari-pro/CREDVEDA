@@ -1,0 +1,40 @@
+
+{% extends "base.html" %}
+{% block title %}AI Features - CredVeda{% endblock %}
+{% block content %}
+<div class="container mx-auto py-8">
+    <h1 class="text-3xl font-bold mb-8 text-center">Our AI-Powered Features</h1>
+    <div class="bg-dark-card p-6">
+        <p class="text-lg text-gray-400 mb-6">
+        CredVeda is built on a foundation of advanced Artificial Intelligence and Machine Learning to deliver deep, actionable credit insights. Our platform is designed to go beyond traditional metrics, providing a holistic and forward-looking view of creditworthiness.
+        </p>
+
+        <h3 class="text-2xl font-bold text-blue-accent mb-3">Predictive Credit Scoring with XGBoost</h3>
+        <p class="text-gray-400 mb-4">
+        The core of our platform is a powerful XGBoost (Extreme Gradient Boosting) model. This sophisticated machine learning algorithm is trained on a diverse dataset encompassing historical market data, fundamental financial indicators, and macroeconomic trends. It excels at uncovering complex, non-linear relationships within the data to produce highly accurate and dynamic credit scores, offering a significant improvement over static, traditional rating methods.
+        </p>
+
+        <h3 class="text-2xl font-bold text-blue-accent mb-3">Transparent Insights with Explainable AI (XAI)</h3>
+        <p class="text-gray-400 mb-4">
+        We eliminate the "black box" problem common in AI. By integrating SHAP (SHapley Additive exPlanations), our platform provides a clear, intuitive breakdown of every credit score. Users can see exactly how much each factor—such as market volatility, news sentiment, or a specific financial ratio—contributed to the final score. This transparency builds trust and empowers users to make decisions with confidence.
+        </p>
+
+        <h3 class="text-2xl font-bold text-blue-accent mb-3">Natural Language Processing (NLP) for Real-Time Sentiment Analysis</h3>
+        <p class="text-gray-400 mb-4">
+        Financial health isn't just about numbers. Our NLP engine analyzes unstructured data from news articles and earnings call transcripts to gauge market and company-specific sentiment. This qualitative data is quantified and fed into our model, allowing the platform to capture the impact of breaking news and management tone—factors that traditional models often miss until it's too late.
+        </p>
+
+        <h3 class="text-2xl font-bold text-blue-accent mb-3">Intelligent Anomaly Detection</h3>
+        <p class="text-gray-400 mb-4">
+        Our system continuously monitors key risk indicators to provide timely "Quantum Anomaly Alerts." This feature uses a rule-based engine to flag unusual events, such as:
+        <ul class="list-disc list-inside text-gray-400 ml-4 mt-2">
+            <li>Sudden spikes in market volatility.</li>
+            <li>Significant drops in news or transcript sentiment.</li>
+            <li>Detection of critical events related to debt, growth, or legal issues from text sources.</li>
+            <li>Abrupt changes in the predicted credit score.</li>
+        </ul>
+        </p>
+    </div>
+</div>
+{% endblock %}
+        

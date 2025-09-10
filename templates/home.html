@@ -1,0 +1,25 @@
+
+{% extends "base.html" %}
+{% block title %}Home - CredVeda{% endblock %}
+{% block content %}
+<div style="padding-top: 100px; text-align: center;">
+    <h1 class="landing-title">AI-Powered Credit Intelligence</h1>
+    <p class="landing-subtitle">Leverage advanced AI to understand credit risks, simulate scenarios, and get intelligent insights</p>
+    <a href="{{ url_for('dashboard_page') }}" class="btn-primary inline-block">Go to Dashboard →</a>
+</div>
+<video class="block mx-auto mt-8 rounded-lg shadow-lg" style="width: 100%; max-width: 1200px;" autoplay loop muted>
+    <source src="{{ url_for('static', filename='business concept.mp4') }}" type="video/mp4">
+    Your browser does not support the video tag.
+</video>
+<div class="mt-12 text-center">
+    <h2 class="text-3xl font-bold mb-4">Ready to Transform Your Credit Analysis?</h2>
+    {% if not session.get('logged_in') %}
+    <p class="text-gray-400 text-lg mb-8">Join the future of transparent, AI-powered credit scoring</p>
+    <a href="{{ url_for('signup') }}" class="btn-primary inline-block">Start Free Trial →</a>
+    {% else %}
+    <p class="text-gray-400 text-lg mb-8">You're already logged in. Explore the dashboard to get started.</p>
+    <a href="{{ url_for('dashboard_page') }}" class="btn-primary inline-block">Go to Dashboard →</a>
+    {% endif %}
+</div>
+{% endblock %}
+        

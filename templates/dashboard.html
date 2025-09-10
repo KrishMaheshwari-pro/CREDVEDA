@@ -1,0 +1,367 @@
+
+{% extends "base.html" %}
+{% block title %}Dashboard - CredVeda{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+{% endblock %}
+{% block content %}
+<div class="container mx-auto py-8">
+    <h1 class="text-3xl font-bold mb-8 text-center">Real-time Credit Insights Dashboard</h1>
+
+    <!-- Metrics Row -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-dark-card text-center p-6">
+            <p class="text-xl text-gray-400">Current Credit Score (<span id="metric-ticker-display">{{ selected_ticker }}</span>)</p>
+            <p class="text-5xl font-bold text-blue-accent my-2" id="current-score-value">{{ current_credit_score if current_credit_score is not none else 'N/A' }}</p>
+            <p class="text-lg text-gray-400" id="delta-score-value">{{ delta_score }}</p>
+        </div>
+        <div class="bg-dark-card text-center p-6">
+            <p class="text-xl text-gray-400">Market Volatility Index</p>
+            <p class="text-5xl font-bold text-blue-accent my-2" id="current-vol-value">{{ current_volatility }}</p>
+            <p class="text-lg text-gray-400" id="delta-vol-value">{{ delta_vol }}</p>
+        </div>
+        <div class="bg-dark-card text-center p-6">
+            <p class="text-xl text-gray-400">Global Macro Indicator</p>
+            <p class="text-5xl font-bold text-blue-accent my-2" id="current-macro-value">{{ current_macro }}</p>
+            <p class="text-lg text-gray-400" id="delta-macro-value">{{ delta_macro }}</p>
+        </div>
+    </div>
+
+    <!-- Ticker and Year Selection -->
+    <div class="bg-dark-card p-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label for="ticker_select" class="block text-xl font-medium text-white mb-2">Select Company</label>
+                <select id="ticker_select" name="ticker" class="mt-1 block w-full pl-3 pr-10 py-1 text-base border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-gray-700 text-white" onchange="handleFilterChange()">
+                    {% for ticker, name in tickers.items() %}
+                        <option value="{{ ticker }}" {% if ticker == selected_ticker %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="year_select" class="block text-xl font-medium text-white mb-2">Select Year</label>
+                <select id="year_select" name="year" class="mt-1 block w-full pl-3 pr-10 py-1 text-base border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-gray-700 text-white" onchange="handleFilterChange()">
+                    {% for year in available_years %}
+                        <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs for Detailed Analysis -->
+    <div class="bg-dark-card p-6">
+        <div class="flex border-b border-gray-700 mb-4">
+            <button class="tab-button px-4 py-2 text-white border-b-2 border-blue-500" onclick="openTab(event, 'score-trend')">📈 Score Trend Analysis</button>
+            <button class="tab-button px-4 py-2 text-gray-400 hover:text-white" onclick="openTab(event, 'explainability')">🔍 Explainability Insights</button>
+            <button class="tab-button px-4 py-2 text-gray-400 hover:text-white" onclick="openTab(event, 'unstructured-feed')">📰 Unstructured Data Feed</button>
+            <button class="tab-button px-4 py-2 text-gray-400 hover:text-white" onclick="openTab(event, 'global-snapshot')">🌍 Global Market Snapshot</button>
+        </div>
+
+        <!-- Tab Content: Score Trend -->
+        <div id="score-trend" class="tab-content">
+            <h2 class="text-2xl font-bold mb-4">Credit Score Trend Over Time</h2>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <canvas id="scoreTrendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Tab Content: Explainability -->
+        <div id="explainability" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4">Why This Score? (Explainability Breakdown)</h2>
+            <h3 class="text-xl font-semibold text-white mb-2">Feature Contributions for <span id="explain-ticker">{{ selected_ticker }}</span> on <span id="explain-date"></span></h3>
+            <p class="text-gray-400 mb-4"><b>Base Probability (Average):</b> <span id="base-score-display"></span>/100. Features adjusted the score to <b><span id="predicted-score-display"></span>/100</b>.</p>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <canvas id="explainChart"></canvas>
+            </div>
+            <h3 class="text-xl font-semibold text-white mt-6 mb-2">Latest Event & Sentiment Insights:</h3>
+            <ul id="event-insights-list" class="list-disc list-inside space-y-2 text-gray-400">
+                <li>No insights available.</li>
+            </ul>
+        </div>
+
+        <!-- Tab Content: Unstructured Data Feed -->
+        <div id="unstructured-feed" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4">Real-time Unstructured Data Feed</h2>
+            <h3 class="text-xl font-semibold text-white mb-2">Recent News Headlines & Sentiment</h3>
+            <p class="text-gray-400 mb-4"><b>Overall News Sentiment:</b> <span id="news-sentiment-display">N/A</span></p>
+            <div id="news-headlines-list" class="space-y-4">
+                <!-- News headlines will be loaded here -->
+            </div>
+            <h3 class="text-xl font-semibold text-white mt-6 mb-2">Latest Earnings Call Transcript Snippets & Sentiment</h3>
+            <p class="text-gray-400 mb-4"><b>Overall Transcript Sentiment:</b> <span id="transcript-sentiment-display">N/A</span></p>
+            <div id="transcript-snippets-list" class="space-y-4">
+                <!-- Transcript snippets will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Tab Content: Global Market Snapshot -->
+        <div id="global-snapshot" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4">Global Market Snapshot</h2>
+            <h3 class="text-xl font-semibold text-white mb-2">Overall Market Sentiment</h3>
+            <p class="text-gray-400 mb-4"><b>Global Sentiment:</b> <span id="global-sentiment-value">N/A</span> <span id="global-sentiment-emoji"></span></p>
+            <div class="w-full bg-gray-700 rounded-full h-2.5 mb-4">
+                <div id="global-sentiment-progress" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+
+            <h3 class="text-xl font-semibold text-white mt-6 mb-2">Top Movers (Illustrative)</h3>
+            <div id="top-movers-table"></div>
+
+            <h3 class="text-xl font-semibold text-white mt-6 mb-2">Key Macroeconomic Trends</h3>
+            <div id="macro-trends-table"></div>
+        </div>
+    </div>
+
+    <!-- Anomaly Alerts -->
+    <div class="bg-dark-card p-6 mt-8">
+        <h2 class="text-2xl font-bold mb-4 text-red-accent">🚨 Quantum Anomaly Alerts</h2>
+        <p class="text-gray-400 mb-4">Real-time detection of significant shifts in creditworthiness signals.</p>
+        <div id="anomaly-alerts-list" class="space-y-3">
+            {% for alert in anomaly_alerts %}
+            <div class="flex items-start p-3 rounded-lg" style="background-color: {{ alert.color }}20; border-left: 4px solid {{ alert.color }};">
+                <div class="mr-3 flex-shrink-0">
+                    <span class="font-bold px-2 py-1 rounded-md text-xs" style="background-color: {{ alert.color }}; color: #ffffff;">{{ alert.type }}</span>
+                </div>
+                <div class="flex-1">
+                    <p class="text-sm text-white">{{ alert.message }}</p>
+                    <p class="text-xs text-gray-400 mt-1">{{ alert.time }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let scoreTrendChartInstance; // Renamed to avoid conflict
+    let explainChartInstance; // Renamed to avoid conflict
+
+    // Function to switch tabs
+    function openTab(evt, tabName) {
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tab-content");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+        }
+        tablinks = document.getElementsByClassName("tab-button");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].className = tablinks[i].className.replace(" border-b-2 border-blue-500", "");
+            tablinks[i].className = tablinks[i].className.replace(" text-white", " text-gray-400 hover:text-white");
+        }
+        document.getElementById(tabName).style.display = "block";
+        evt.currentTarget.className += " border-b-2 border-blue-500 text-white";
+        evt.currentTarget.className = evt.currentTarget.className.replace(" text-gray-400 hover:text-white", "");
+    }
+
+    // Function to handle changes in ticker or year dropdowns
+    function handleFilterChange() {
+        const ticker = document.getElementById('ticker_select').value;
+        const year = document.getElementById('year_select').value;
+        window.location.href = `/dashboard?ticker=${ticker}&year=${year}`;
+    }
+
+    // Function to fetch data and update dashboard sections
+    async function fetchAndUpdateDashboard(ticker, year) {
+        document.getElementById('metric-ticker-display').innerText = ticker; // Update ticker in metric card
+        document.getElementById('explain-ticker').innerText = ticker;
+        
+        // Fetch credit score trend
+        fetch(`/api/credit_score_trend/${ticker}/${year}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) { console.error("Error fetching credit score trend:", data.error); return; }
+                const ctx = document.getElementById('scoreTrendChart').getContext('2d');
+                if (scoreTrendChartInstance) { scoreTrendChartInstance.destroy(); }
+                scoreTrendChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.dates,
+                        datasets: [{
+                            label: `${ticker} Credit Score (${year})`,
+                            data: data.scores,
+                            borderColor: 'rgb(121, 192, 255)',
+                            backgroundColor: 'rgba(121, 192, 255, 0.2)',
+                            tension: 0.1, pointRadius: 2,
+                            pointBackgroundColor: 'rgb(121, 192, 255)'
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        scales: {
+                            x: { title: { display: true, text: 'Date' }, ticks: { autoSkip: true, maxTicksLimit: 10 } },
+                            y: { title: { display: true, text: 'Credit Score (0-100)' }, min: 0, max: 100 }
+                        },
+                        plugins: { legend: { display: true } }
+                    }
+                });
+            });
+
+        // Fetch explainability data for the latest available date
+        fetch(`/api/explainability/${ticker}/latest`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error("Error fetching explainability data:", data.error);
+                    const explainChartContainer = document.getElementById('explainChart').parentElement;
+                    explainChartContainer.innerHTML = `<p class="text-red-400 text-center">${data.error}</p>`;
+                    return;
+                }
+                
+                document.getElementById('explain-date').innerText = data.date;
+                document.getElementById('base-score-display').innerText = data.base_score;
+                document.getElementById('predicted-score-display').innerText = data.predicted_score;
+
+                const ctxExplain = document.getElementById('explainChart').getContext('2d');
+                if (explainChartInstance) { explainChartInstance.destroy(); }
+
+                const features = data.explanation_data.map(d => d.Feature);
+                const contributions = data.explanation_data.map(d => d.Contribution);
+                
+                explainChartInstance = new Chart(ctxExplain, {
+                    type: 'bar',
+                    data: {
+                        labels: features,
+                        datasets: [{
+                            label: 'Feature Contribution to Score',
+                            data: contributions,
+                            backgroundColor: contributions.map(c => c >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                            borderColor: contributions.map(c => c >= 0 ? 'rgba(40, 167, 69, 1)' : 'rgba(220, 53, 69, 1)'),
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        scales: {
+                            x: { 
+                                title: { display: true, text: 'Impact on Credit Score (SHAP Value)' },
+                                ticks: { color: '#e6edf3' },
+                                grid: { color: '#30363d' }
+                            },
+                            y: { 
+                                title: { display: false },
+                                ticks: { color: '#e6edf3' },
+                                grid: { color: '#30363d' }
+                            }
+                        },
+                        plugins: { 
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed.x !== null) {
+                                            label += `Contribution: ${context.parsed.x.toFixed(4)}`;
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                const eventList = document.getElementById('event-insights-list');
+                eventList.innerHTML = '';
+                if (data.events_insights && data.events_insights.length > 0) {
+                    data.events_insights.forEach(event => {
+                        const li = document.createElement('li');
+                        li.innerHTML = event; // Assuming event is already formatted HTML
+                        eventList.appendChild(li);
+                    });
+                } else {
+                    eventList.innerHTML = '<li>No specific events or strong sentiment detected for this period.</li>';
+                }
+            })
+            .catch(err => {
+                console.error('Fetch error for explainability:', err);
+                const explainChartContainer = document.getElementById('explainChart').parentElement;
+                explainChartContainer.innerHTML = `<p class="text-red-400 text-center">Could not load explanation data. Please try again later.</p>`;
+            });
+
+        // Update Unstructured Data Feed (Sentiment values are passed, headlines are mock)
+        const currentNewsSentiment = {{ current_news_sentiment | tojson }};
+        const currentTranscriptSentiment = {{ current_transcript_sentiment | tojson }};
+
+        if (currentNewsSentiment !== null) {
+            document.getElementById('news-sentiment-display').innerText = `${currentNewsSentiment.toFixed(2)} ${currentNewsSentiment > 0.2 ? '😊 Positive' : (currentNewsSentiment < -0.2 ? '😞 Negative' : '😐 Neutral')}`;
+        } else {
+            document.getElementById('news-sentiment-display').innerText = 'N/A';
+        }
+        // Mock headlines remain static as they are not fetched from DB
+        
+        if (currentTranscriptSentiment !== null) {
+            document.getElementById('transcript-sentiment-display').innerText = `${currentTranscriptSentiment.toFixed(2)} ${currentTranscriptSentiment > 0.1 ? '😊 Positive' : (currentTranscriptSentiment < -0.1 ? '😞 Negative' : '😐 Neutral')}`;
+        } else {
+            document.getElementById('transcript-sentiment-display').innerText = 'N/A';
+        }
+        // Mock snippets remain static
+
+        // Update Global Market Snapshot (some data is live, some mock)
+        updateGlobalSnapshot();
+    }
+
+    function updateGlobalSnapshot() {
+        const globalSentimentValue = {{ market_sentiment | tojson }};
+        document.getElementById('global-sentiment-value').innerText = globalSentimentValue.toFixed(2);
+        let emoji = '😐';
+        let color = 'orange';
+        if (globalSentimentValue > 0.2) { emoji = '😊 Positive'; color = 'green'; }
+        else if (globalSentimentValue < -0.2) { emoji = '😞 Negative'; color = 'red'; }
+        document.getElementById('global-sentiment-emoji').innerText = emoji;
+        document.getElementById('global-sentiment-emoji').style.color = color;
+        document.getElementById('global-sentiment-progress').style.width = `${((globalSentimentValue + 1) / 2) * 100}%`;
+        document.getElementById('global-sentiment-progress').style.backgroundColor = color;
+
+        const topMoversData = [
+            {Company: 'GOOGL', 'Change (%)': 3.5, Reason: 'Strong Earnings'},
+            {Company: 'MSFT', 'Change (%)': 2.8, Reason: 'New Product Launch'},
+            {Company: 'RELIANCE.NS', 'Change (%)': 1.9, Reason: 'Market Optimism'},
+            {Company: 'ADANIENT.NS', 'Change (%)': -2.1, Reason: 'Regulatory Scrutiny'},
+            {Company: 'TSLA', 'Change (%)': -4.2, Reason: 'Supply Chain Issues'}
+        ];
+        let topMoversHtml = '<table class="table-auto"><thead><tr><th>Company</th><th>Change (%)</th><th>Reason</th></tr></thead><tbody>';
+        topMoversData.forEach(row => {
+            const changeColor = row['Change (%)'] > 0 ? 'text-green-accent' : 'text-red-accent';
+            topMoversHtml += `<tr><td>${row.Company}</td><td class="${changeColor}">${row['Change (%)'].toFixed(2)}%</td><td>${row.Reason}</td></tr>`;
+        });
+        topMoversHtml += '</tbody></table>';
+        document.getElementById('top-movers-table').innerHTML = topMoversHtml;
+
+        const latestMacroIndicator = {{ latest_macro_indicator | tojson }};
+        const macroTrendsData = [
+            {Indicator: 'FRED DGS10 (10-Year Yield)', Value: latestMacroIndicator !== null ? latestMacroIndicator.toFixed(2) : 'N/A', Trend: 'N/A', Impact: 'N/A'},
+            {Indicator: 'Inflation Rate', Value: '2.80%', Trend: 'Stable', Impact: 'Consumer Spending Pressure'},
+            {Indicator: 'Global Trade Volume', Value: '1.05', Trend: 'Fluctuating', Impact: 'Supply Chain Risk'}
+        ];
+        let macroTrendsHtml = '<table class="table-auto"><thead><tr><th>Indicator</th><th>Value</th><th>Trend</th><th>Impact</th></tr></thead><tbody>';
+        macroTrendsData.forEach(row => {
+            macroTrendsHtml += `<tr><td>${row.Indicator}</td><td>${row.Value}</td><td>${row.Trend}</td><td>${row.Impact}</td></tr>`;
+        });
+            macroTrendsHtml += '</tbody></table>';
+        document.getElementById('macro-trends-table').innerHTML = macroTrendsHtml;
+    }
+
+    // Initial load for dashboard
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialTicker = urlParams.get('ticker') || document.getElementById('ticker_select').value;
+        const initialYear = urlParams.get('year') || document.getElementById('year_select').value;
+        
+        document.getElementById('ticker_select').value = initialTicker; // Set selectbox value
+        document.getElementById('year_select').value = initialYear; // Set selectbox value
+
+        fetchAndUpdateDashboard(initialTicker, initialYear);
+        openTab(event, 'score-trend'); // Open first tab by default
+    });
+</script>
+{% endblock %}
+        
