@@ -27,7 +27,7 @@
 - **Backend**: Python, Flask  
 - **Frontend**: HTML, CSS, JS (via Flask templates)  
 - **Database**: SQLite  
-- **Machine Learning**: Scikit-learn, XGBoost, Pandas, NumPy  
+- **Machine Learning**: Scikit-learn,Random Forest, XGBoost, Pandas, NumPy  
 - **Model Storage**: Joblib  
 
 ---
@@ -101,3 +101,4 @@ Dashboard | Chatbot
 MIT License – see the LICENSE file for details.
 
 ---
+
