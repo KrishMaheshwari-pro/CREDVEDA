@@ -113,3 +113,4 @@ FEATURE_COLS = [
 
 # --- DATABASE ---
 DB_NAME = "credit_intelligence.db"
+# Updated on 2026-02-18
