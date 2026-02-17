@@ -2254,3 +2254,4 @@ if __name__ == '__main__':
     print("Open your browser and go to: http://127.0.0.1:5000/login")
     print("-----------------------------------------------------------------------")
     app.run(debug=True) # debug=True allows auto-reloading on code changes
+# Updated on 2026-02-18

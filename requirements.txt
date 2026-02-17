@@ -22,4 +22,4 @@ lxml==6.0.0
 soupsieve==2.6
 peewee==3.18.2
 python-dotenv==1.0.1
-pytz==2024.2
+pytz==2024.2Updated on 2026-02-18
