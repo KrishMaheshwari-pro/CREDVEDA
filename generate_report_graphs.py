@@ -9,7 +9,7 @@ import numpy as np
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 # ==========================================
-# CONFIGURATION SECTION (EDIT THIS)
+# CONFIGURATION SECTION
 # ==========================================
 # Choose 'rf' or 'xgb' based on which model you trained last
 MODEL_TYPE = 'rf' 
