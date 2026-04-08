@@ -16,7 +16,7 @@ SECRET_KEY = os.urandom(24)
 DB_NAME = 'credit_intelligence.db' # IMPORTANT: Ensure this matches your data_ingestion.py config!
 
 # ML Model Configuration
-MODEL_CHOICE = "xgb" # Assuming you'll train XGBoost
+MODEL_CHOICE = "rf" # Changed to RandomForest due to XGBoost compatibility issue with Python 3.13
 MODEL_FILENAME = f'model_{MODEL_CHOICE}.joblib'
 SCALER_FILENAME = f'scaler_{MODEL_CHOICE}.joblib'
 FEATURES_FILENAME = f'feature_cols_{MODEL_CHOICE}.joblib'
