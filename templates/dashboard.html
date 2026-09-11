@@ -1,135 +1,205 @@
-
 {% extends "base.html" %}
-{% block title %}Dashboard - CredVeda{% endblock %}
-{% block head_extra %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-{% endblock %}
+{% block title %}Portfolio — CredVeda{% endblock %}
 {% block content %}
-<div class="container mx-auto py-8">
-    <h1 class="text-3xl font-bold mb-8 text-center">Real-time Credit Insights Dashboard</h1>
+<div class="container">
 
-    <!-- Metrics Row -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="bg-dark-card text-center p-6">
-            <p class="text-xl text-gray-400">Current Credit Score (<span id="metric-ticker-display">{{ selected_ticker }}</span>)</p>
-            <p class="text-5xl font-bold text-blue-accent my-2" id="current-score-value">{{ current_credit_score if current_credit_score is not none else 'N/A' }}</p>
-            <p class="text-lg text-gray-400" id="delta-score-value">{{ delta_score }}</p>
+    <div class="card-head mb-3">
+        <div>
+            <h1 class="mb-1">Applicant portfolio</h1>
+            <p class="muted mb-0">{{ '{:,}'.format(stats.n) }} scored applicants. Filter the book, then open anyone to
+                see exactly why they scored what they scored.</p>
         </div>
-        <div class="bg-dark-card text-center p-6">
-            <p class="text-xl text-gray-400">Market Volatility Index</p>
-            <p class="text-5xl font-bold text-blue-accent my-2" id="current-vol-value">{{ current_volatility }}</p>
-            <p class="text-lg text-gray-400" id="delta-vol-value">{{ delta_vol }}</p>
+        <a href="{{ url_for('apply_page') }}" class="btn btn-primary nowrap"><i class="fas fa-plus"></i> New
+            assessment</a>
+    </div>
+
+    <div class="grid grid-4 mb-3">
+        <div class="stat">
+            <p class="stat-label">Approval rate</p>
+            <p class="stat-value">{{ stats.approval_rate }}%</p>
+            <p class="stat-foot">score ≥ {{ approval_threshold }}</p>
         </div>
-        <div class="bg-dark-card text-center p-6">
-            <p class="text-xl text-gray-400">Global Macro Indicator</p>
-            <p class="text-5xl font-bold text-blue-accent my-2" id="current-macro-value">{{ current_macro }}</p>
-            <p class="text-lg text-gray-400" id="delta-macro-value">{{ delta_macro }}</p>
+        <div class="stat">
+            <p class="stat-label">Average score</p>
+            <p class="stat-value">{{ stats.avg_score|int }}</p>
+            <p class="stat-foot">on a {{ score_min }}–{{ score_max }} scale</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Thin file</p>
+            <p class="stat-value">{{ stats.thin_file_pct }}%</p>
+            <p class="stat-foot">scored as a band, not a point</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Affordability flags</p>
+            <p class="stat-value">{{ stats.guardrail_pct }}%</p>
+            <p class="stat-foot">blocked by repayment burden</p>
         </div>
     </div>
 
-    <!-- Ticker and Year Selection -->
-    <div class="bg-dark-card p-6 mb-8">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="grid grid-2 mb-3">
+        <div class="card">
+            <p class="card-title">Score Distribution</p>
+            <div style="height:250px;">
+                <canvas id="scoreDistChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <p class="card-title">Approval Status</p>
+            <div style="height:250px;">
+                <canvas id="approvalChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <form method="get" class="card mb-3">
+        <div class="card-head" style="margin-bottom:14px">
+            <p class="card-title mb-0"><i class="fas fa-filter" style="color:var(--text-faint)"></i> Filters</p>
+            <span class="chip chip-info">{{ '{:,}'.format(stats.filtered_n) }} matching</span>
+        </div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px">
             <div>
-                <label for="ticker_select" class="block text-xl font-medium text-white mb-2">Select Company</label>
-                <select id="ticker_select" name="ticker" class="mt-1 block w-full pl-3 pr-10 py-1 text-base border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-gray-700 text-white" onchange="handleFilterChange()">
-                    {% for ticker, name in tickers.items() %}
-                        <option value="{{ ticker }}" {% if ticker == selected_ticker %}selected{% endif %}>{{ name }}</option>
+                <label class="label">Entity type</label>
+                <select name="entity_type" class="select">
+                    <option value="">All</option>
+                    {% for et in filters.entity_types %}
+                    <option value="{{ et }}" {{ 'selected' if selected.entity_type==et }}>{{ et }}</option>
                     {% endfor %}
                 </select>
             </div>
             <div>
-                <label for="year_select" class="block text-xl font-medium text-white mb-2">Select Year</label>
-                <select id="year_select" name="year" class="mt-1 block w-full pl-3 pr-10 py-1 text-base border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-gray-700 text-white" onchange="handleFilterChange()">
-                    {% for year in available_years %}
-                        <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+                <label class="label">Business / occupation</label>
+                <select name="business_type" class="select">
+                    <option value="">All</option>
+                    {% for bt in filters.business_types %}
+                    <option value="{{ bt }}" {{ 'selected' if selected.business_type==bt }}>{{ bt }}</option>
                     {% endfor %}
                 </select>
             </div>
-        </div>
-    </div>
-
-    <!-- Tabs for Detailed Analysis -->
-    <div class="bg-dark-card p-6">
-        <div class="flex border-b border-gray-700 mb-4">
-            <button class="tab-button px-4 py-2 text-white border-b-2 border-blue-500" onclick="openTab(event, 'score-trend')">📈 Score Trend Analysis</button>
-            <button class="tab-button px-4 py-2 text-gray-400 hover:text-white" onclick="openTab(event, 'explainability')">🔍 Explainability Insights</button>
-            <button class="tab-button px-4 py-2 text-gray-400 hover:text-white" onclick="openTab(event, 'unstructured-feed')">📰 Unstructured Data Feed</button>
-            <button class="tab-button px-4 py-2 text-gray-400 hover:text-white" onclick="openTab(event, 'global-snapshot')">🌍 Global Market Snapshot</button>
-        </div>
-
-        <!-- Tab Content: Score Trend -->
-        <div id="score-trend" class="tab-content">
-            <h2 class="text-2xl font-bold mb-4">Credit Score Trend Over Time</h2>
-            <div class="bg-gray-800 p-4 rounded-lg">
-                <canvas id="scoreTrendChart"></canvas>
+            <div>
+                <label class="label">Geography</label>
+                <select name="geography_tier" class="select">
+                    <option value="">All</option>
+                    {% for gt in filters.geography_tiers %}
+                    <option value="{{ gt }}" {{ 'selected' if selected.geography_tier==gt }}>{{ gt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="label">Gender</label>
+                <select name="gender" class="select">
+                    <option value="">All</option>
+                    {% for g in filters.genders %}
+                    <option value="{{ g }}" {{ 'selected' if selected.gender==g }}>{{ g }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="label">Confidence</label>
+                <select name="confidence" class="select">
+                    <option value="">All</option>
+                    {% for c in filters.confidence_labels %}
+                    <option value="{{ c }}" {{ 'selected' if selected.confidence==c }}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="label">Applicant ID</label>
+                <input type="text" name="search" value="{{ selected.search }}" placeholder="APP-00042" class="input">
             </div>
         </div>
+        <div class="mt-2" style="display:flex;gap:10px;flex-wrap:wrap">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-magnifying-glass"></i> Apply</button>
+            <a href="{{ url_for('dashboard_page') }}" class="btn btn-ghost btn-sm">Reset</a>
+        </div>
+    </form>
 
-        <!-- Tab Content: Explainability -->
-        <div id="explainability" class="tab-content hidden">
-            <h2 class="text-2xl font-bold mb-4">Why This Score? (Explainability Breakdown)</h2>
-            <h3 class="text-xl font-semibold text-white mb-2">Feature Contributions for <span id="explain-ticker">{{ selected_ticker }}</span> on <span id="explain-date"></span></h3>
-            <p class="text-gray-400 mb-4"><b>Base Probability (Average):</b> <span id="base-score-display"></span>/100. Features adjusted the score to <b><span id="predicted-score-display"></span>/100</b>.</p>
-            <div class="bg-gray-800 p-4 rounded-lg">
-                <canvas id="explainChart"></canvas>
-            </div>
-            <h3 class="text-xl font-semibold text-white mt-6 mb-2">Latest Event & Sentiment Insights:</h3>
-            <ul id="event-insights-list" class="list-disc list-inside space-y-2 text-gray-400">
-                <li>No insights available.</li>
-            </ul>
+    <div class="card">
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Applicant</th>
+                        <th>Profile</th>
+                        <th>Geography</th>
+                        <th>Score</th>
+                        <th>Confidence</th>
+                        <th>Decision</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in applicants %}
+                    <tr>
+                        <td class="strong mono">{{ a.applicant_id }}</td>
+                        <td>
+                            <div class="strong" style="color:var(--text)">{{ a.business_type }}</div>
+                            <small class="faint">{{ a.entity_type }}</small>
+                        </td>
+                        <td>{{ a.geography_tier }}<br><small class="faint">{{ a.geography_state }}</small></td>
+                        <td>
+                            {% if a.band_first %}
+                            <span class="strong nowrap" style="color:var(--text)">{{ a.band_low }}–{{ a.band_high
+                                }}</span>
+                            <br><small class="faint">estimated range</small>
+                            {% else %}
+                            <span class="strong" style="font-size:1.0625rem;color:var(--text)">{{ a.credit_score
+                                }}</span>
+                            <span class="chip chip-{{ a.tier_tone }}" style="margin-left:6px">{{ a.tier_label }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if 'Low' in a.confidence_label %}
+                            <span class="chip chip-bad chip-dot">Low</span>
+                            {% elif 'Medium' in a.confidence_label %}
+                            <span class="chip chip-warn chip-dot">Medium</span>
+                            {% else %}
+                            <span class="chip chip-good chip-dot">High</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if '"critical"' in a.guardrail_flags %}
+                            <span class="chip chip-bad"><i class="fas fa-ban"></i> Affordability</span>
+                            {% elif a.credit_score >= approval_threshold %}
+                            <span class="chip chip-good"><i class="fas fa-check"></i> Approve</span>
+                            {% else %}
+                            <span class="chip">Review</span>
+                            {% endif %}
+                        </td>
+                        <td class="nowrap">
+                            <a href="{{ url_for('applicant_detail', applicant_id=a.applicant_id) }}"
+                                class="btn btn-ghost btn-sm">
+                                Open <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty">
+                                <div class="empty-icon"><i class="fas fa-magnifying-glass"></i></div>
+                                <p class="mb-0">No applicants match these filters.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
 
-        <!-- Tab Content: Unstructured Data Feed -->
-        <div id="unstructured-feed" class="tab-content hidden">
-            <h2 class="text-2xl font-bold mb-4">Real-time Unstructured Data Feed</h2>
-            <h3 class="text-xl font-semibold text-white mb-2">Recent News Headlines & Sentiment</h3>
-            <p class="text-gray-400 mb-4"><b>Overall News Sentiment:</b> <span id="news-sentiment-display">N/A</span></p>
-            <div id="news-headlines-list" class="space-y-4">
-                <!-- News headlines will be loaded here -->
-            </div>
-            <h3 class="text-xl font-semibold text-white mt-6 mb-2">Latest Earnings Call Transcript Snippets & Sentiment</h3>
-            <p class="text-gray-400 mb-4"><b>Overall Transcript Sentiment:</b> <span id="transcript-sentiment-display">N/A</span></p>
-            <div id="transcript-snippets-list" class="space-y-4">
-                <!-- Transcript snippets will be loaded here -->
-            </div>
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+            <a class="btn btn-ghost btn-sm"
+                href="{{ url_for('dashboard_page', page=page-1, entity_type=selected.entity_type, business_type=selected.business_type, geography_tier=selected.geography_tier, gender=selected.gender, confidence=selected.confidence, search=selected.search) }}">
+                <i class="fas fa-arrow-left"></i> Prev</a>
+            {% endif %}
+            <span class="faint">Page {{ page }} of {{ total_pages }}</span>
+            {% if page < total_pages %} <a class="btn btn-ghost btn-sm"
+                href="{{ url_for('dashboard_page', page=page+1, entity_type=selected.entity_type, business_type=selected.business_type, geography_tier=selected.geography_tier, gender=selected.gender, confidence=selected.confidence, search=selected.search) }}">
+                Next <i class="fas fa-arrow-right"></i></a>
+                {% endif %}
         </div>
-
-        <!-- Tab Content: Global Market Snapshot -->
-        <div id="global-snapshot" class="tab-content hidden">
-            <h2 class="text-2xl font-bold mb-4">Global Market Snapshot</h2>
-            <h3 class="text-xl font-semibold text-white mb-2">Overall Market Sentiment</h3>
-            <p class="text-gray-400 mb-4"><b>Global Sentiment:</b> <span id="global-sentiment-value">N/A</span> <span id="global-sentiment-emoji"></span></p>
-            <div class="w-full bg-gray-700 rounded-full h-2.5 mb-4">
-                <div id="global-sentiment-progress" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
-            </div>
-
-            <h3 class="text-xl font-semibold text-white mt-6 mb-2">Top Movers (Illustrative)</h3>
-            <div id="top-movers-table"></div>
-
-            <h3 class="text-xl font-semibold text-white mt-6 mb-2">Key Macroeconomic Trends</h3>
-            <div id="macro-trends-table"></div>
-        </div>
-    </div>
-
-    <!-- Anomaly Alerts -->
-    <div class="bg-dark-card p-6 mt-8">
-        <h2 class="text-2xl font-bold mb-4 text-red-accent">🚨 Quantum Anomaly Alerts</h2>
-        <p class="text-gray-400 mb-4">Real-time detection of significant shifts in creditworthiness signals.</p>
-        <div id="anomaly-alerts-list" class="space-y-3">
-            {% for alert in anomaly_alerts %}
-            <div class="flex items-start p-3 rounded-lg" style="background-color: {{ alert.color }}20; border-left: 4px solid {{ alert.color }};">
-                <div class="mr-3 flex-shrink-0">
-                    <span class="font-bold px-2 py-1 rounded-md text-xs" style="background-color: {{ alert.color }}; color: #ffffff;">{{ alert.type }}</span>
-                </div>
-                <div class="flex-1">
-                    <p class="text-sm text-white">{{ alert.message }}</p>
-                    <p class="text-xs text-gray-400 mt-1">{{ alert.time }}</p>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
+        {% endif %}
     </div>
 
 </div>
@@ -137,231 +207,74 @@
 
 {% block scripts %}
 <script>
-    let scoreTrendChartInstance; // Renamed to avoid conflict
-    let explainChartInstance; // Renamed to avoid conflict
+    const scores = {{ scores_list|default('[]')|safe }};
+    const threshold = {{ approval_threshold }};
+    
+    if (scores && scores.length > 0) {
+        // Prepare histogram data
+        const bins = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+        const counts = new Array(10).fill(0);
+        let approvedCount = 0;
+        let rejectedCount = 0;
 
-    // Function to switch tabs
-    function openTab(evt, tabName) {
-        var i, tabcontent, tablinks;
-        tabcontent = document.getElementsByClassName("tab-content");
-        for (i = 0; i < tabcontent.length; i++) {
-            tabcontent[i].style.display = "none";
-        }
-        tablinks = document.getElementsByClassName("tab-button");
-        for (i = 0; i < tablinks.length; i++) {
-            tablinks[i].className = tablinks[i].className.replace(" border-b-2 border-blue-500", "");
-            tablinks[i].className = tablinks[i].className.replace(" text-white", " text-gray-400 hover:text-white");
-        }
-        document.getElementById(tabName).style.display = "block";
-        evt.currentTarget.className += " border-b-2 border-blue-500 text-white";
-        evt.currentTarget.className = evt.currentTarget.className.replace(" text-gray-400 hover:text-white", "");
-    }
-
-    // Function to handle changes in ticker or year dropdowns
-    function handleFilterChange() {
-        const ticker = document.getElementById('ticker_select').value;
-        const year = document.getElementById('year_select').value;
-        window.location.href = `/dashboard?ticker=${ticker}&year=${year}`;
-    }
-
-    // Function to fetch data and update dashboard sections
-    async function fetchAndUpdateDashboard(ticker, year) {
-        document.getElementById('metric-ticker-display').innerText = ticker; // Update ticker in metric card
-        document.getElementById('explain-ticker').innerText = ticker;
-        
-        // Fetch credit score trend
-        fetch(`/api/credit_score_trend/${ticker}/${year}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) { console.error("Error fetching credit score trend:", data.error); return; }
-                const ctx = document.getElementById('scoreTrendChart').getContext('2d');
-                if (scoreTrendChartInstance) { scoreTrendChartInstance.destroy(); }
-                scoreTrendChartInstance = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: data.dates,
-                        datasets: [{
-                            label: `${ticker} Credit Score (${year})`,
-                            data: data.scores,
-                            borderColor: 'rgb(121, 192, 255)',
-                            backgroundColor: 'rgba(121, 192, 255, 0.2)',
-                            tension: 0.1, pointRadius: 2,
-                            pointBackgroundColor: 'rgb(121, 192, 255)'
-                        }]
-                    },
-                    options: {
-                        responsive: true, maintainAspectRatio: false,
-                        scales: {
-                            x: { title: { display: true, text: 'Date' }, ticks: { autoSkip: true, maxTicksLimit: 10 } },
-                            y: { title: { display: true, text: 'Credit Score (0-100)' }, min: 0, max: 100 }
-                        },
-                        plugins: { legend: { display: true } }
-                    }
-                });
-            });
-
-        // Fetch explainability data for the latest available date
-        fetch(`/api/explainability/${ticker}/latest`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    console.error("Error fetching explainability data:", data.error);
-                    const explainChartContainer = document.getElementById('explainChart').parentElement;
-                    explainChartContainer.innerHTML = `<p class="text-red-400 text-center">${data.error}</p>`;
-                    return;
+        scores.forEach(s => {
+            const score = s.score;
+            if (score >= threshold && !s.guardrail_blocked) approvedCount++;
+            else rejectedCount++;
+            
+            for (let i = 0; i < 10; i++) {
+                if (score >= bins[i] && score < bins[i+1]) {
+                    counts[i]++;
+                    break;
                 }
-                
-                document.getElementById('explain-date').innerText = data.date;
-                document.getElementById('base-score-display').innerText = data.base_score;
-                document.getElementById('predicted-score-display').innerText = data.predicted_score;
+            }
+        });
 
-                const ctxExplain = document.getElementById('explainChart').getContext('2d');
-                if (explainChartInstance) { explainChartInstance.destroy(); }
+        const labels = bins.slice(0, 10).map((b, i) => `${b}-${bins[i+1]}`);
 
-                const features = data.explanation_data.map(d => d.Feature);
-                const contributions = data.explanation_data.map(d => d.Contribution);
-                
-                explainChartInstance = new Chart(ctxExplain, {
-                    type: 'bar',
-                    data: {
-                        labels: features,
-                        datasets: [{
-                            label: 'Feature Contribution to Score',
-                            data: contributions,
-                            backgroundColor: contributions.map(c => c >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
-                            borderColor: contributions.map(c => c >= 0 ? 'rgba(40, 167, 69, 1)' : 'rgba(220, 53, 69, 1)'),
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        scales: {
-                            x: { 
-                                title: { display: true, text: 'Impact on Credit Score (SHAP Value)' },
-                                ticks: { color: '#e6edf3' },
-                                grid: { color: '#30363d' }
-                            },
-                            y: { 
-                                title: { display: false },
-                                ticks: { color: '#e6edf3' },
-                                grid: { color: '#30363d' }
-                            }
-                        },
-                        plugins: { 
-                            legend: { display: false },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        let label = context.dataset.label || '';
-                                        if (label) {
-                                            label += ': ';
-                                        }
-                                        if (context.parsed.x !== null) {
-                                            label += `Contribution: ${context.parsed.x.toFixed(4)}`;
-                                        }
-                                        return label;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-
-                const eventList = document.getElementById('event-insights-list');
-                eventList.innerHTML = '';
-                if (data.events_insights && data.events_insights.length > 0) {
-                    data.events_insights.forEach(event => {
-                        const li = document.createElement('li');
-                        li.innerHTML = event; // Assuming event is already formatted HTML
-                        eventList.appendChild(li);
-                    });
-                } else {
-                    eventList.innerHTML = '<li>No specific events or strong sentiment detected for this period.</li>';
+        // Score Distribution Chart
+        new Chart(document.getElementById('scoreDistChart'), {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Applicants',
+                    data: counts,
+                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { beginAtZero: true }
                 }
-            })
-            .catch(err => {
-                console.error('Fetch error for explainability:', err);
-                const explainChartContainer = document.getElementById('explainChart').parentElement;
-                explainChartContainer.innerHTML = `<p class="text-red-400 text-center">Could not load explanation data. Please try again later.</p>`;
-            });
-
-        // Update Unstructured Data Feed (Sentiment values are passed, headlines are mock)
-        const currentNewsSentiment = {{ current_news_sentiment | tojson }};
-        const currentTranscriptSentiment = {{ current_transcript_sentiment | tojson }};
-
-        if (currentNewsSentiment !== null) {
-            document.getElementById('news-sentiment-display').innerText = `${currentNewsSentiment.toFixed(2)} ${currentNewsSentiment > 0.2 ? '😊 Positive' : (currentNewsSentiment < -0.2 ? '😞 Negative' : '😐 Neutral')}`;
-        } else {
-            document.getElementById('news-sentiment-display').innerText = 'N/A';
-        }
-        // Mock headlines remain static as they are not fetched from DB
-        
-        if (currentTranscriptSentiment !== null) {
-            document.getElementById('transcript-sentiment-display').innerText = `${currentTranscriptSentiment.toFixed(2)} ${currentTranscriptSentiment > 0.1 ? '😊 Positive' : (currentTranscriptSentiment < -0.1 ? '😞 Negative' : '😐 Neutral')}`;
-        } else {
-            document.getElementById('transcript-sentiment-display').innerText = 'N/A';
-        }
-        // Mock snippets remain static
-
-        // Update Global Market Snapshot (some data is live, some mock)
-        updateGlobalSnapshot();
-    }
-
-    function updateGlobalSnapshot() {
-        const globalSentimentValue = {{ market_sentiment | tojson }};
-        document.getElementById('global-sentiment-value').innerText = globalSentimentValue.toFixed(2);
-        let emoji = '😐';
-        let color = 'orange';
-        if (globalSentimentValue > 0.2) { emoji = '😊 Positive'; color = 'green'; }
-        else if (globalSentimentValue < -0.2) { emoji = '😞 Negative'; color = 'red'; }
-        document.getElementById('global-sentiment-emoji').innerText = emoji;
-        document.getElementById('global-sentiment-emoji').style.color = color;
-        document.getElementById('global-sentiment-progress').style.width = `${((globalSentimentValue + 1) / 2) * 100}%`;
-        document.getElementById('global-sentiment-progress').style.backgroundColor = color;
-
-        const topMoversData = [
-            {Company: 'GOOGL', 'Change (%)': 3.5, Reason: 'Strong Earnings'},
-            {Company: 'MSFT', 'Change (%)': 2.8, Reason: 'New Product Launch'},
-            {Company: 'RELIANCE.NS', 'Change (%)': 1.9, Reason: 'Market Optimism'},
-            {Company: 'ADANIENT.NS', 'Change (%)': -2.1, Reason: 'Regulatory Scrutiny'},
-            {Company: 'TSLA', 'Change (%)': -4.2, Reason: 'Supply Chain Issues'}
-        ];
-        let topMoversHtml = '<table class="table-auto"><thead><tr><th>Company</th><th>Change (%)</th><th>Reason</th></tr></thead><tbody>';
-        topMoversData.forEach(row => {
-            const changeColor = row['Change (%)'] > 0 ? 'text-green-accent' : 'text-red-accent';
-            topMoversHtml += `<tr><td>${row.Company}</td><td class="${changeColor}">${row['Change (%)'].toFixed(2)}%</td><td>${row.Reason}</td></tr>`;
+            }
         });
-        topMoversHtml += '</tbody></table>';
-        document.getElementById('top-movers-table').innerHTML = topMoversHtml;
 
-        const latestMacroIndicator = {{ latest_macro_indicator | tojson }};
-        const macroTrendsData = [
-            {Indicator: 'FRED DGS10 (10-Year Yield)', Value: latestMacroIndicator !== null ? latestMacroIndicator.toFixed(2) : 'N/A', Trend: 'N/A', Impact: 'N/A'},
-            {Indicator: 'Inflation Rate', Value: '2.80%', Trend: 'Stable', Impact: 'Consumer Spending Pressure'},
-            {Indicator: 'Global Trade Volume', Value: '1.05', Trend: 'Fluctuating', Impact: 'Supply Chain Risk'}
-        ];
-        let macroTrendsHtml = '<table class="table-auto"><thead><tr><th>Indicator</th><th>Value</th><th>Trend</th><th>Impact</th></tr></thead><tbody>';
-        macroTrendsData.forEach(row => {
-            macroTrendsHtml += `<tr><td>${row.Indicator}</td><td>${row.Value}</td><td>${row.Trend}</td><td>${row.Impact}</td></tr>`;
+        // Approval Chart
+        new Chart(document.getElementById('approvalChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Approved', 'Rejected / Manual Review'],
+                datasets: [{
+                    data: [approvedCount, rejectedCount],
+                    backgroundColor: ['rgba(16, 185, 129, 0.8)', 'rgba(239, 68, 68, 0.8)'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
         });
-            macroTrendsHtml += '</tbody></table>';
-        document.getElementById('macro-trends-table').innerHTML = macroTrendsHtml;
     }
-
-    // Initial load for dashboard
-    document.addEventListener('DOMContentLoaded', () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const initialTicker = urlParams.get('ticker') || document.getElementById('ticker_select').value;
-        const initialYear = urlParams.get('year') || document.getElementById('year_select').value;
-        
-        document.getElementById('ticker_select').value = initialTicker; // Set selectbox value
-        document.getElementById('year_select').value = initialYear; // Set selectbox value
-
-        fetchAndUpdateDashboard(initialTicker, initialYear);
-        openTab(event, 'score-trend'); // Open first tab by default
-    });
 </script>
 {% endblock %}
-        

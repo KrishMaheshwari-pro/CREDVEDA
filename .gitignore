@@ -26,3 +26,6 @@ output/
 
 *.txt
 !requirements.txt# Updated on 2026-02-18
+server.log
+screenshots/
+shots/

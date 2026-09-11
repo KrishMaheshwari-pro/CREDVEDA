@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Model Report Card — CredVeda{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+{% block content %}
+<div class="container">
+
+    <div class="mb-3">
+        <h1 class="mb-1">Model report card</h1>
+        <p class="muted mb-0" style="max-width:76ch">
+            What we compared, what we judged it on, and which model actually runs in production — including the
+            case where that isn't the one with the best score. Trained on {{ '{:,}'.format(card.n_train) }} applicants,
+            evaluated on {{ '{:,}'.format(card.n_test) }} held out.
+        </p>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0">Candidate comparison</p>
+                <p class="card-sub">Gini and KS are the standard scorecard measures; Brier measures whether the probabilities are calibrated, not just correctly ranked</p>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr><th>Model</th><th>ROC-AUC</th><th>Gini</th><th>KS</th><th>Brier ↓</th><th>Accuracy</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    {% for m in card.leaderboard %}
+                    <tr>
+                        <td class="strong">{{ m.name }}</td>
+                        <td class="strong">{{ '%.3f'|format(m.roc_auc) }}</td>
+                        <td>{{ '%.3f'|format(m.gini) }}</td>
+                        <td>{{ '%.3f'|format(m.ks) }}</td>
+                        <td>{{ '%.3f'|format(m.brier) }}</td>
+                        <td>{{ (m.accuracy * 100)|round(1) }}%</td>
+                        <td style="display:flex;gap:5px;flex-wrap:wrap">
+                            {% if m.in_production %}<span class="chip chip-good"><i class="fas fa-circle-check"></i> In production</span>{% endif %}
+                            {% if m.best_by_auc %}<span class="chip chip-info">Highest AUC</span>{% endif %}
+                            {% if m.explainable %}<span class="chip">Exactly explainable</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="alert alert-info mt-3" style="margin-bottom:0">
+            <span class="alert-icon"><i class="fas fa-scale-balanced"></i></span>
+            <div class="alert-body">
+                <p class="alert-title">Why {{ card.production_model }} is in production</p>
+                <p class="alert-text">
+                    The candidates are separated by a hair on discrimination — the gap between the best and worst
+                    AUC here is smaller than the noise you would get from reshuffling the train/test split. What
+                    is <em>not</em> close is explainability: PS #4 requires a defensible reason for every individual
+                    decision, and the Random Forest is the only candidate whose single-prediction output decomposes
+                    <em>exactly</em> into per-feature contributions. Trading a fraction of a point of AUC for an
+                    explanation you can put in front of a rejected applicant is the right trade for lending.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-2 mb-3">
+        <!-- Calibration -->
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0">Calibration</p>
+                    <p class="card-sub">Does a predicted 70% actually repay 70% of the time?</p>
+                </div>
+            </div>
+            <div class="chart-box"><canvas id="calChart" height="260"></canvas></div>
+            <p class="help mt-2 mb-0">
+                Points on the dashed line mean the probabilities can be trusted as probabilities — which is what
+                lets a lender price risk rather than merely rank it. Ranking quality (AUC) and calibration are
+                different properties, and a model can have one without the other.
+            </p>
+        </div>
+
+        <!-- Live outcomes -->
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0">Live portfolio outcomes</p>
+                    <p class="card-sub">Predicted at funding vs. what borrowers actually did</p>
+                </div>
+            </div>
+            {% if buckets %}
+            <div class="chart-box"><canvas id="liveChart" height="260"></canvas></div>
+            <p class="help mt-2 mb-0">
+                The test above is measured on a held-out split. This one is measured on money actually lent —
+                see the <a href="{{ url_for('loan_portfolio') }}">lending portfolio</a>.
+            </p>
+            {% else %}
+            <div class="empty">
+                <div class="empty-icon"><i class="fas fa-hand-holding-dollar"></i></div>
+                <p class="mb-0">No loans funded yet — fund an applicant and advance the clock to populate this.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid grid-2">
+        <div class="card">
+            <p class="card-title"><i class="fas fa-magnifying-glass-chart" style="color:var(--warn)"></i> Data-consistency screen</p>
+            <p class="muted mb-0">
+                A separate unsupervised model (Isolation Forest) looks for applications whose numbers don't hang
+                together the way genuine ones do — a large claimed inflow on a handful of transactions, filings
+                inconsistent with turnover. It flags roughly {{ (anomaly_rate * 100)|round(0)|int }}% of files for
+                manual verification. It never blocks a decision on its own; it routes the file to a human, which
+                is how a real lender treats a soft fraud signal.
+            </p>
+        </div>
+        <div class="card">
+            <p class="card-title"><i class="fas fa-wave-square" style="color:var(--brand)"></i> Where the confidence band comes from</p>
+            <p class="muted mb-0">
+                Each applicant's band is the wider of two independent doubts: how much of their file we actually
+                have, and how much the forest's own trees disagree about them. The second is measured as the
+                standard error of the ensemble's prediction — where trees diverge, the model is extrapolating
+                rather than recognising, and the band widens to say so.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const cal = {{ card.calibration|tojson }};
+    const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+    new Chart(document.getElementById('calChart'), {
+        type: 'line',
+        data: {
+            datasets: [
+                { label: 'Model', data: cal.map(p => ({ x: p.predicted * 100, y: p.actual * 100 })),
+                  borderColor: css('--brand'), backgroundColor: css('--brand'),
+                  pointRadius: 4, tension: 0.25 },
+                { label: 'Perfect calibration', data: [{x:0,y:0},{x:100,y:100}],
+                  borderColor: css('--text-faint'), borderDash: [5,5], pointRadius: 0, borderWidth: 1 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: css('--text-dim'), font: { size: 11 } } } },
+            scales: {
+                x: { type: 'linear', min: 0, max: 100, title: { display: true, text: 'Predicted probability',
+                     color: css('--text-faint'), font: { size: 11 } },
+                     ticks: { color: css('--text-faint'), font: { size: 10 }, callback: v => v + '%' },
+                     grid: { color: css('--border-soft') } },
+                y: { min: 0, max: 100, title: { display: true, text: 'Observed repayment rate',
+                     color: css('--text-faint'), font: { size: 11 } },
+                     ticks: { color: css('--text-faint'), font: { size: 10 }, callback: v => v + '%' },
+                     grid: { color: css('--border-soft') } }
+            }
+        }
+    });
+
+    {% if buckets %}
+    const buckets = {{ buckets|tojson }};
+    new Chart(document.getElementById('liveChart'), {
+        type: 'bar',
+        data: {
+            labels: buckets.map(b => b.label),
+            datasets: [
+                { label: 'Predicted', data: buckets.map(b => +(b.predicted * 100).toFixed(1)),
+                  backgroundColor: 'rgba(79,140,255,.75)', borderRadius: 4 },
+                { label: 'Actual on-time', data: buckets.map(b => +(b.actual_on_time * 100).toFixed(1)),
+                  backgroundColor: 'rgba(34,197,94,.75)', borderRadius: 4 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: css('--text-dim'), font: { size: 11 } } } },
+            scales: {
+                x: { ticks: { color: css('--text-faint'), font: { size: 10 } }, grid: { display: false } },
+                y: { beginAtZero: true, max: 100, ticks: { color: css('--text-faint'), font: { size: 10 }, callback: v => v + '%' },
+                     grid: { color: css('--border-soft') } }
+            }
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %}

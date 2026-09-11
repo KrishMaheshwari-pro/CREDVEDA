@@ -1,25 +1,154 @@
-
 {% extends "base.html" %}
-{% block title %}Home - CredVeda{% endblock %}
+{% block title %}CredVeda — Alternative Credit Scoring{% endblock %}
 {% block content %}
-<div style="padding-top: 100px; text-align: center;">
-    <h1 class="landing-title">AI-Powered Credit Intelligence</h1>
-    <p class="landing-subtitle">Leverage advanced AI to understand credit risks, simulate scenarios, and get intelligent insights</p>
-    <a href="{{ url_for('dashboard_page') }}" class="btn-primary inline-block">Go to Dashboard →</a>
-</div>
-<video class="block mx-auto mt-8 rounded-lg shadow-lg" style="width: 100%; max-width: 1200px;" autoplay loop muted>
-    <source src="{{ url_for('static', filename='business concept.mp4') }}" type="video/mp4">
-    Your browser does not support the video tag.
-</video>
-<div class="mt-12 text-center">
-    <h2 class="text-3xl font-bold mb-4">Ready to Transform Your Credit Analysis?</h2>
-    {% if not session.get('logged_in') %}
-    <p class="text-gray-400 text-lg mb-8">Join the future of transparent, AI-powered credit scoring</p>
-    <a href="{{ url_for('signup') }}" class="btn-primary inline-block">Start Free Trial →</a>
-    {% else %}
-    <p class="text-gray-400 text-lg mb-8">You're already logged in. Explore the dashboard to get started.</p>
-    <a href="{{ url_for('dashboard_page') }}" class="btn-primary inline-block">Go to Dashboard →</a>
-    {% endif %}
-</div>
+
+<section class="hero container">
+    <span class="eyebrow"><i class="fas fa-circle-nodes"></i> Problem Statement #4 · Alternative Credit Scoring</span>
+    <h1>Creditworthy, but <span class="gradient-text">invisible</span> to the bureau.</h1>
+    <p class="hero-lead">
+        Most Indian micro-enterprises and individuals have no meaningful credit file — so they get rejected,
+        or priced crudely. CredVeda scores them from the data they already generate every day, and explains
+        every single score in plain language.
+    </p>
+    <div class="hero-actions">
+        <a href="{{ url_for('apply_page') }}" class="btn btn-primary btn-lg">
+            <i class="fas fa-bolt"></i> Score an applicant live
+        </a>
+        <a href="{{ url_for('dashboard_page') }}" class="btn btn-ghost btn-lg">
+            Browse the portfolio <i class="fas fa-arrow-right"></i>
+        </a>
+    </div>
+</section>
+
+{% if stats %}
+<section class="container mb-5">
+    <div class="grid grid-4">
+        <div class="stat">
+            <p class="stat-label">Applicants scored</p>
+            <p class="stat-value">{{ '{:,}'.format(stats.n) }}</p>
+            <p class="stat-foot">{{ '{:,}'.format(stats.n_business) }} businesses · {{ '{:,}'.format(stats.n_individual) }} individuals</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Approval rate</p>
+            <p class="stat-value">{{ stats.approval_rate }}%</p>
+            <p class="stat-foot">at a 650 score cut-off</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Thin-file applicants</p>
+            <p class="stat-value">{{ stats.thin_file_pct }}%</p>
+            <p class="stat-foot">scored with a confidence band</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Model discrimination</p>
+            <p class="stat-value">0.77</p>
+            <p class="stat-foot">ROC-AUC on held-out data</p>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<section class="container mb-5">
+    <div class="section-head">
+        <h2>The data a bureau never sees</h2>
+        <p>Five families of alternative signal, engineered into 18 model features — no credit history required.</p>
+    </div>
+    <div class="grid grid-3">
+        <div class="card feature">
+            <div class="feature-icon"><i class="fas fa-mobile-screen"></i></div>
+            <h3>Digital payment flows</h3>
+            <p>Inflow scale, 6-month growth, month-to-month volatility, transaction count, bounce rate and how much of their activity is digitally traceable at all.</p>
+        </div>
+        <div class="card feature">
+            <div class="feature-icon"><i class="fas fa-file-invoice"></i></div>
+            <h3>GST &amp; invoice history</h3>
+            <p>Registration status, how reliably returns are filed on time, and what share of outstanding invoices have gone overdue.</p>
+        </div>
+        <div class="card feature">
+            <div class="feature-icon"><i class="fas fa-bolt"></i></div>
+            <h3>Utility &amp; rent payments</h3>
+            <p>The most universal signal of all — does this person pay their bills on time, month after month, when nobody is checking their credit?</p>
+        </div>
+        <div class="card feature">
+            <div class="feature-icon"><i class="fas fa-truck-fast"></i></div>
+            <h3>Supplier relationships</h3>
+            <p>Concentration risk across suppliers and buyers, and how much of the book is repeat business versus one-off trade.</p>
+        </div>
+        <div class="card feature">
+            <div class="feature-icon"><i class="fas fa-clock-rotate-left"></i></div>
+            <h3>Business vintage</h3>
+            <p>How far back the operating or income history actually goes — the single strongest structural signal for a thin-file borrower.</p>
+        </div>
+        <div class="card feature">
+            <div class="feature-icon"><i class="fas fa-scale-balanced"></i></div>
+            <h3>Affordability</h3>
+            <p>Existing plus proposed EMI against estimated net cash flow, so a good score can never quietly push through an unaffordable loan.</p>
+        </div>
+    </div>
+</section>
+
+<section class="container mb-5">
+    <div class="section-head">
+        <h2>Built to be defensible, not just accurate</h2>
+        <p>A score you can't explain, can't audit, and can't act on is a liability. Here's what ships with every decision.</p>
+    </div>
+    <div class="grid grid-2">
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title"><i class="fas fa-comment-dots" style="color:var(--brand)"></i> Plain-language reason codes</p>
+                    <p class="card-sub">Explainable modelling · Reason codes</p>
+                </div>
+            </div>
+            <p class="mb-0">Every prediction is decomposed feature-by-feature into an exact additive explanation,
+            then mapped to standard codes (RC01–RC14) with sentences an applicant can actually read —
+            so a rejection can be justified to the person receiving it, not just logged.</p>
+        </div>
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title"><i class="fas fa-wave-square" style="color:var(--warn)"></i> Honest uncertainty</p>
+                    <p class="card-sub">Thin-file handling</p>
+                </div>
+            </div>
+            <p class="mb-0">When the data is sparse, CredVeda refuses to fake precision. It reports a
+            <strong>confidence band</strong> — “somewhere between 520 and 640” — instead of a confident-looking
+            number that the evidence doesn't support.</p>
+        </div>
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title"><i class="fas fa-scale-unbalanced" style="color:var(--good)"></i> Fairness under audit</p>
+                    <p class="card-sub">Fairness testing</p>
+                </div>
+            </div>
+            <p class="mb-0">Gender, geography and business type are withheld from the model entirely, then used
+            <em>after the fact</em> to test outcomes against the four-fifths rule — and we publish where the model
+            comes out harsher, rather than burying it in an average.</p>
+        </div>
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title"><i class="fas fa-arrow-trend-up" style="color:var(--brand)"></i> A way forward</p>
+                    <p class="card-sub">Borrower improvement path</p>
+                </div>
+            </div>
+            <p class="mb-0">Rejected applicants get the two or three behaviours that would most improve their score
+            over six months — each one simulated against the real model, not pulled from a list of generic tips.</p>
+        </div>
+    </div>
+</section>
+
+<section class="container">
+    <div class="card" style="text-align:center; padding:44px 24px;">
+        <h2 class="mb-2">See it decide something</h2>
+        <p class="mb-3" style="max-width:52ch;margin-left:auto;margin-right:auto">
+            Type in an applicant's alternative-data profile and watch the score, the reason codes,
+            the affordability guardrails and the improvement path come back live.
+        </p>
+        <a href="{{ url_for('apply_page') }}" class="btn btn-primary btn-lg">
+            <i class="fas fa-bolt"></i> Try a live assessment
+        </a>
+    </div>
+</section>
+
 {% endblock %}
-        
