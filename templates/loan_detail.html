@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{{ loan.loan_id }} — CredVeda{% endblock %}
+{% block content %}
+{% set repaid = schedule | selectattr('status', 'in', ['paid', 'late']) | list | length %}
+{% set progress = (repaid / loan.tenure_months * 100) if loan.tenure_months else 0 %}
+
+<div class="container">
+    <a href="{{ url_for('loan_portfolio') }}" class="faint" style="font-size:.875rem">
+        <i class="fas fa-arrow-left"></i> Back to portfolio
+    </a>
+
+    <div class="card-head mt-2 mb-3">
+        <div>
+            <h1 class="mb-1 mono">{{ loan.loan_id }}</h1>
+            <div style="display:flex;gap:7px;flex-wrap:wrap">
+                <a href="{{ url_for('applicant_detail', applicant_id=loan.applicant_id) }}" class="chip chip-info">
+                    <i class="fas fa-user"></i> {{ loan.applicant_id }}</a>
+                {% if applicant %}
+                <span class="chip">{{ applicant.business_type }}</span>
+                <span class="chip">{{ applicant.geography_tier }}</span>
+                {% endif %}
+                {% if loan.status == 'defaulted' %}<span class="chip chip-bad">Written off</span>
+                {% elif loan.status == 'closed' %}<span class="chip chip-good">Fully repaid</span>
+                {% else %}<span class="chip chip-info">Active</span>{% endif %}
+            </div>
+        </div>
+        {% if loan.status == 'active' %}
+        <form method="post" action="{{ url_for('advance_single_loan', loan_id=loan.loan_id) }}">
+            <button class="btn btn-primary nowrap" type="submit"><i class="fas fa-forward-step"></i> Run next EMI</button>
+        </form>
+        {% endif %}
+    </div>
+
+    <div class="grid grid-4 mb-3">
+        <div class="stat">
+            <p class="stat-label">Principal</p>
+            <p class="stat-value">₹{{ '{:,.0f}'.format(loan.principal) }}</p>
+            <p class="stat-foot">{{ loan.tenure_months }} months @ {{ (loan.annual_rate * 100)|round(0)|int }}%</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Monthly EMI</p>
+            <p class="stat-value">₹{{ '{:,.0f}'.format(loan.monthly_emi) }}</p>
+            <p class="stat-foot">fixed at disbursal</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Repaid</p>
+            <p class="stat-value">{{ repaid }} / {{ loan.tenure_months }}</p>
+            <p class="stat-foot">{{ progress|round(0)|int }}% of schedule</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Score at funding</p>
+            <p class="stat-value">{{ loan.score_at_funding }}</p>
+            <p class="stat-foot">predicted {{ (loan.prob_good_at_funding * 100)|round(0)|int }}% likely to repay</p>
+        </div>
+    </div>
+
+    {% if adjustment.points %}
+    <div class="alert {{ 'alert-ok' if adjustment.points > 0 else 'alert-critical' }} mb-3">
+        <span class="alert-icon"><i class="fas fa-{{ 'arrow-trend-up' if adjustment.points > 0 else 'arrow-trend-down' }}"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">Repayment behaviour is now feeding back into this borrower's score
+                ({{ '+' if adjustment.points > 0 }}{{ adjustment.points }} points)</p>
+            <p class="alert-text">{{ adjustment.reason }}
+            This adjustment is applied on top of the model score and shown as its own line item, rather than
+            being folded invisibly into a model feature.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0">Repayment schedule</p>
+                <p class="card-sub">Amortisation fixed at disbursal, as in a real loan agreement</p>
+            </div>
+            <div style="display:flex;gap:6px">
+                <span class="chip chip-good">{{ history.paid }} on time</span>
+                <span class="chip chip-warn">{{ history.late }} late</span>
+                <span class="chip chip-bad">{{ history.missed }} missed</span>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>#</th><th>Amount due</th><th>Status</th><th>Settled</th></tr></thead>
+                <tbody>
+                    {% for r in schedule %}
+                    <tr>
+                        <td class="strong">{{ r.instalment_no }}</td>
+                        <td>₹{{ '{:,.0f}'.format(r.amount_due) }}</td>
+                        <td>
+                            {% if r.status == 'paid' %}<span class="chip chip-good"><i class="fas fa-check"></i> Paid on time</span>
+                            {% elif r.status == 'late' %}<span class="chip chip-warn">Paid late</span>
+                            {% elif r.status == 'missed' %}<span class="chip chip-bad"><i class="fas fa-xmark"></i> Missed</span>
+                            {% else %}<span class="chip">Upcoming</span>{% endif %}
+                        </td>
+                        <td class="faint">{{ r.paid_at[:10] if r.paid_at else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

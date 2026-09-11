@@ -1,0 +1,542 @@
+{% extends "base.html" %}
+{% block title %}{{ applicant.applicant_id }} — CredVeda{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+{% block content %}
+
+{% set ARC = 314.159 %}
+{% set span = (score_max - score_min) %}
+{% set fill_offset = ARC * (1 - ((result.credit_score - score_min) / span)) %}
+{% set band_start = ARC * ((result.band_low - score_min) / span) %}
+{% set band_len = ARC * ((result.band_high - result.band_low) / span) %}
+{% set critical = result.guardrail_flags | selectattr('severity', 'equalto', 'critical') | list %}
+
+<div class="container">
+
+    <a href="{{ url_for('dashboard_page') }}" class="faint" style="font-size:.875rem">
+        <i class="fas fa-arrow-left"></i> Back to portfolio
+    </a>
+
+    <div class="card-head mt-2 mb-3">
+        <div>
+            <h1 class="mb-1 mono">{{ applicant.applicant_id }}</h1>
+            <div style="display:flex;gap:7px;flex-wrap:wrap">
+                <span class="chip">{{ applicant.entity_type }}</span>
+                <span class="chip">{{ applicant.business_type }}</span>
+                <span class="chip">{{ applicant.geography_tier }} · {{ applicant.geography_state }}</span>
+                <span class="chip">{{ applicant.vintage_months|round(0)|int }} mo vintage</span>
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a href="{{ url_for('applicant_explanation', applicant_id=applicant.applicant_id) }}"
+                class="btn btn-ghost nowrap">
+                <i class="fas fa-user"></i> View as applicant
+            </a>
+            {% if active_loan %}
+            <a href="{{ url_for('loan_detail', loan_id=active_loan['loan_id']) }}" class="btn btn-ghost nowrap">
+                <i class="fas fa-file-invoice-dollar"></i> Open active loan
+            </a>
+            {% elif result.approved %}
+            <form method="post" action="{{ url_for('fund_applicant', applicant_id=applicant.applicant_id) }}">
+                <input type="hidden" name="principal" value="{{ applicant.requested_loan_amount }}">
+                <input type="hidden" name="tenure" value="{{ applicant.requested_tenure_months|int }}">
+                <button type="submit" class="btn btn-primary nowrap">
+                    <i class="fas fa-hand-holding-dollar"></i> Fund ₹{{
+                    '{:,.0f}'.format(applicant.requested_loan_amount) }}
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if loans %}
+    <div class="alert alert-info mb-3">
+        <span class="alert-icon"><i class="fas fa-clock-rotate-left"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">This borrower has {{ loans|length }} loan{{ 's' if loans|length != 1 }} on the
+                platform</p>
+            <p class="alert-text">
+                {% for l in loans %}
+                <a href="{{ url_for('loan_detail', loan_id=l['loan_id']) }}" class="mono">{{ l['loan_id'] }}</a>
+                (₹{{ '{:,.0f}'.format(l['principal']) }}, {{ l['status'] }}){{ ', ' if not loop.last }}
+                {% endfor %}
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if result.repayment_adjustment and result.repayment_adjustment.points %}
+    <div class="alert {{ 'alert-ok' if result.repayment_adjustment.points > 0 else 'alert-critical' }} mb-3">
+        <span class="alert-icon"><i
+                class="fas fa-{{ 'arrow-trend-up' if result.repayment_adjustment.points > 0 else 'arrow-trend-down' }}"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">Behavioural adjustment applied: {{ '+' if result.repayment_adjustment.points > 0 }}{{
+                result.repayment_adjustment.points }} points</p>
+            <p class="alert-text">
+                Model score {{ result.base_score }} → <strong>{{ result.credit_score }}</strong>.
+                {{ result.repayment_adjustment.reason }}
+                Shown as its own line item rather than folded into a model feature, so both the statistical
+                assessment and the behavioural override stay auditable.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Decision banner -->
+    {% if critical %}
+    <div class="alert alert-critical mb-3">
+        <span class="alert-icon"><i class="fas fa-ban"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">Declined — affordability guardrail</p>
+            <p class="alert-text">{{ critical[0].message }}</p>
+        </div>
+    </div>
+    {% elif result.approved %}
+    <div class="alert alert-ok mb-3">
+        <span class="alert-icon"><i class="fas fa-circle-check"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">Meets approval criteria</p>
+            <p class="alert-text">Scores at or above the {{ approval_threshold }} cut-off with no affordability
+                guardrail triggered.</p>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-warn mb-3">
+        <span class="alert-icon"><i class="fas fa-circle-exclamation"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">Below the approval cut-off — manual review</p>
+            <p class="alert-text">Scores below the {{ approval_threshold }} threshold. The factors below explain why,
+                and the improvement path shows what would move it.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="grid grid-side mb-3">
+
+        <!-- Score -->
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0">Credit score</p>
+                    <p class="card-sub">{{ score_min }}–{{ score_max }} scale</p>
+                </div>
+                {% if 'Low' in result.confidence_label %}
+                <span class="chip chip-bad chip-dot">Low confidence</span>
+                {% elif 'Medium' in result.confidence_label %}
+                <span class="chip chip-warn chip-dot">Medium confidence</span>
+                {% else %}
+                <span class="chip chip-good chip-dot">High confidence</span>
+                {% endif %}
+            </div>
+
+            <div class="gauge-wrap">
+                <div class="gauge">
+                    <svg viewBox="0 0 240 148">
+                        <path class="gauge-track" d="M 20 120 A 100 100 0 0 1 220 120" />
+                        <path class="gauge-band" d="M 20 120 A 100 100 0 0 1 220 120"
+                            stroke-dasharray="0 {{ band_start|round(2) }} {{ band_len|round(2) }} {{ ARC }}" />
+                        <path class="gauge-fill" d="M 20 120 A 100 100 0 0 1 220 120"
+                            stroke="var(--{{ result.tier_tone }})" stroke-dasharray="{{ ARC }}"
+                            stroke-dashoffset="{{ fill_offset|round(2) }}" />
+                    </svg>
+                    <div class="gauge-center">
+                        {% if result.band_first %}
+                        <span class="gauge-range" style="color:var(--{{ result.tier_tone }})">{{ result.band_low }}–{{
+                            result.band_high }}</span>
+                        <div class="gauge-tier faint">estimated range · midpoint {{ result.credit_score }}</div>
+                        {% else %}
+                        <span class="gauge-score" style="color:var(--{{ result.tier_tone }})">{{ result.credit_score
+                            }}</span>
+                        <div class="gauge-tier" style="color:var(--{{ result.tier_tone }})">{{ result.tier_label }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="gauge-scale"><span>{{ score_min }}</span><span>{{ score_max }}</span></div>
+            </div>
+
+            <hr class="divider">
+
+            <p class="label mb-1">Confidence band</p>
+            <div class="bandbar">
+                <div class="bandbar-track">
+                    <div class="bandbar-range" style="left:{{ (100 * (result.band_low - score_min) / span)|round(2) }}%;
+                                width:{{ (100 * (result.band_high - result.band_low) / span)|round(2) }}%"></div>
+                </div>
+                <div class="bandbar-scale"><span>{{ score_min }}</span><span>{{ score_max }}</span></div>
+            </div>
+            <p class="help mt-2 mb-0">
+                {% if result.band_first %}
+                We report a range rather than a precise score here — the evidence doesn't support more
+                precision than that.
+                {% else %}
+                The score is reported as a point estimate with a ±{{ ((result.band_high - result.band_low) /
+                2)|round(0)|int }} band.
+                {% endif %}
+                {% if result.uncertainty_width is defined %}
+                Width is set by the wider of two independent doubts:
+                <strong>{{ (result.data_completeness * 100)|round(0)|int }}%</strong> of expected signals present
+                (→ ±{{ (result.completeness_width / 2)|round(0)|int }}) and how much the forest's own trees
+                disagree about this applicant (→ ±{{ (result.uncertainty_width / 2)|round(0)|int }}).
+                {% endif %}
+            </p>
+
+            <hr class="divider">
+            <dl class="datarow" style="border:none;padding:0">
+                <dt>Probability of good repayment</dt>
+                <dd>{{ (result.probability_good * 100)|round(1) }}%</dd>
+            </dl>
+        </div>
+
+        <!-- Reason codes -->
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0">Why this score</p>
+                    <p class="card-sub">Standard reason codes, ranked by contribution</p>
+                </div>
+            </div>
+            {% for r in result.reason_codes %}
+            <div class="reason">
+                <span class="reason-mark {{ 'reason-up' if r.impact == 'positive' else 'reason-down' }}">
+                    {{ '+' if r.impact == 'positive' else '−' }}
+                </span>
+                <div class="reason-body">
+                    <div class="reason-top">
+                        <span class="reason-code">{{ r.code }}</span>
+                        <span class="reason-label">{{ r.label }}</span>
+                    </div>
+                    <p class="reason-text">{{ r.text }}</p>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty">
+                <p class="mb-0">No dominant factors identified.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Non-critical guardrails -->
+    {% set warnings = result.guardrail_flags | rejectattr('severity', 'equalto', 'critical') | list %}
+    {% if warnings %}
+    <div class="card mb-3">
+        <p class="card-title">Responsible lending checks</p>
+        {% for g in warnings %}
+        <div class="alert alert-warn" style="margin-bottom:0">
+            <span class="alert-icon"><i class="fas fa-triangle-exclamation"></i></span>
+            <div class="alert-body">
+                <p class="alert-title">Caution</p>
+                <p class="alert-text">{{ g.message }}</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Visualizations: Network & Radar -->
+    <div class="grid grid-2 mb-3">
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0"><i class="fas fa-network-wired" style="color:var(--brand)"></i> Supply Chain Network</p>
+                    <p class="card-sub">Mapping cashflow dependencies</p>
+                </div>
+            </div>
+            <div id="supplyChainNetwork" style="height:250px; background:var(--bg-soft); border-radius:6px; border:1px solid var(--border-soft);"></div>
+        </div>
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0"><i class="fas fa-chart-radar" style="color:var(--brand)"></i> Profile Benchmark</p>
+                    <p class="card-sub">Applicant vs. Healthy Portfolio Average</p>
+                </div>
+            </div>
+            <div style="height:250px;">
+                <canvas id="radarChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Affordability / FOIR -->
+    {% if result.foir %}
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0"><i class="fas fa-scale-balanced" style="color:var(--brand)"></i>
+                    Affordability (FOIR) &amp; stress test</p>
+                <p class="card-sub">Fixed Obligation to Income Ratio — the affordability measure Indian lenders actually
+                    underwrite against</p>
+            </div>
+        </div>
+        <div class="grid grid-3">
+            <div>
+                <p class="stat-label">FOIR today</p>
+                <p class="stat-value"
+                    style="color:var({{ '--bad' if result.foir.foir >= 0.65 else ('--warn' if result.foir.foir >= 0.45 else '--good') }})">
+                    {{ (result.foir.foir * 100)|round(0)|int }}%</p>
+                <p class="stat-foot">of assessable income goes to EMIs</p>
+            </div>
+            <div>
+                <p class="stat-label">After a {{ (result.foir.income_drop * 100)|round(0)|int }}% income drop</p>
+                <p class="stat-value" style="color:var({{ '--bad' if not result.foir.survives_stress else '--good' }})">
+                    {{ (result.foir.stressed_foir * 100)|round(0)|int }}%</p>
+                <p class="stat-foot">{{ 'still within limits' if result.foir.survives_stress else 'breaches the 65%
+                    limit' }}</p>
+            </div>
+            <div>
+                <p class="stat-label">Verdict</p>
+                <p class="stat-value"
+                    style="font-size:1.25rem;color:var({{ '--good' if result.foir.passes and result.foir.survives_stress else ('--warn' if result.foir.survives_stress else '--bad') }})">
+                    {% if result.foir.passes and result.foir.survives_stress %}Comfortable
+                    {% elif result.foir.survives_stress %}Tight but viable
+                    {% else %}No downside buffer{% endif %}
+                </p>
+                <p class="stat-foot">checked today and against a bad quarter</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Data consistency screen -->
+    {% if result.anomaly and result.anomaly.flagged %}
+    <div class="alert alert-warn mb-3">
+        <span class="alert-icon"><i class="fas fa-magnifying-glass-chart"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">Data-consistency screen flagged this file</p>
+            <p class="alert-text">
+                The combination of figures here is statistically unusual compared with genuine applications in
+                the portfolio — no single value is extreme, but they don't hang together the way real ones do.
+                Recommend verifying the underlying data before deciding. This is a routing signal for a human,
+                never an automatic rejection.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Improvement path -->
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0"><i class="fas fa-arrow-trend-up" style="color:var(--good)"></i> Improvement
+                    path</p>
+                <p class="card-sub">Simulated against the live model — what would most raise this score in ~6 months</p>
+            </div>
+        </div>
+        {% if result.improvement_path %}
+        <div class="grid grid-3">
+            {% for imp in result.improvement_path %}
+            <div class="lever">
+                <span class="lever-gain">+{{ imp.estimated_point_gain }}</span>
+                <div>
+                    <p class="lever-label">{{ imp.label }}</p>
+                    <p class="lever-note">points, sustained over ~6 months</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted mb-0">No high-impact levers identified — this applicant is already strong across every modelled
+            behaviour.</p>
+        {% endif %}
+    </div>
+
+    <div class="grid grid-side">
+        <!-- Contribution chart -->
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0">Feature contributions</p>
+                    <p class="card-sub">Additive decomposition of this single prediction</p>
+                </div>
+            </div>
+            <div class="chart-box"><canvas id="factorChart" height="240"></canvas></div>
+        </div>
+
+        <!-- Raw data -->
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0">Alternative-data snapshot</p>
+                    <p class="card-sub">What we actually observed</p>
+                </div>
+            </div>
+            <dl style="margin:0">
+                <div class="datarow">
+                    <dt>Avg monthly digital inflow</dt>
+                    {% if applicant.avg_monthly_inflow %}<dd>₹{{ '{:,.0f}'.format(applicant.avg_monthly_inflow) }}</dd>
+                    {% else %}<dd class="na">not available — cash-heavy</dd>{% endif %}
+                </div>
+                <div class="datarow">
+                    <dt>Monthly transactions</dt>
+                    {% if applicant.monthly_txn_count %}<dd>{{ applicant.monthly_txn_count|int }}</dd>
+                    {% else %}<dd class="na">not available</dd>{% endif %}
+                </div>
+                <div class="datarow">
+                    <dt>Payment bounce rate</dt>
+                    {% if applicant.txn_bounce_rate is not none %}<dd>{{ (applicant.txn_bounce_rate * 100)|round(1) }}%
+                    </dd>
+                    {% else %}<dd class="na">not available</dd>{% endif %}
+                </div>
+                <div class="datarow">
+                    <dt>Digital adoption</dt>
+                    <dd>{{ (applicant.digital_adoption_ratio * 100)|round(0)|int }}%</dd>
+                </div>
+                <div class="datarow">
+                    <dt>Inflow growth (6 mo)</dt>
+                    <dd>{{ (applicant.inflow_growth_rate_6m * 100)|round(1) }}%</dd>
+                </div>
+                <div class="datarow">
+                    <dt>GST registered</dt>
+                    <dd>{{ 'Yes' if applicant.gst_registered else 'No' }}</dd>
+                </div>
+                <div class="datarow">
+                    <dt>GST filing regularity</dt>
+                    {% if applicant.gst_filing_regularity %}<dd>{{ (applicant.gst_filing_regularity * 100)|round(0)|int
+                        }}%</dd>
+                    {% else %}<dd class="na">not applicable</dd>{% endif %}
+                </div>
+                <div class="datarow">
+                    <dt>Utility paid on time</dt>
+                    {% if applicant.utility_ontime_ratio is not none %}<dd>{{ (applicant.utility_ontime_ratio *
+                        100)|round(0)|int }}%</dd>
+                    {% else %}<dd class="na">not available</dd>{% endif %}
+                </div>
+                <div class="datarow">
+                    <dt>Rent paid on time</dt>
+                    {% if applicant.rent_ontime_ratio is not none %}<dd>{{ (applicant.rent_ontime_ratio *
+                        100)|round(0)|int }}%</dd>
+                    {% else %}<dd class="na">not available</dd>{% endif %}
+                </div>
+                <div class="datarow">
+                    <dt>Supplier concentration</dt>
+                    {% if applicant.supplier_concentration_hhi %}<dd>{{ (applicant.supplier_concentration_hhi *
+                        100)|round(0)|int }}%</dd>
+                    {% else %}<dd class="na">not applicable</dd>{% endif %}
+                </div>
+                <div class="datarow">
+                    <dt>Existing loans</dt>
+                    <dd>{{ applicant.existing_loan_count|int }} · ₹{{ '{:,.0f}'.format(applicant.existing_monthly_emi)
+                        }}/mo</dd>
+                </div>
+                <div class="datarow">
+                    <dt>Bureau record</dt>
+                    <dd>{% if applicant.bureau_score_available %}available{% else %}<span class="na">none — thin
+                            file</span>{% endif %}</dd>
+                </div>
+                <div class="datarow">
+                    <dt>Requested loan</dt>
+                    <dd>₹{{ '{:,.0f}'.format(applicant.requested_loan_amount) }} / {{
+                        applicant.requested_tenure_months|int }} mo</dd>
+                </div>
+                <div class="datarow" style="border-bottom:none">
+                    <dt>Repayment burden</dt>
+                    <dd
+                        style="color:var({{ '--bad' if applicant.repayment_burden_ratio >= 0.65 else ('--warn' if applicant.repayment_burden_ratio >= 0.45 else '--good') }})">
+                        {{ (applicant.repayment_burden_ratio * 100)|round(0)|int }}% of cash flow</dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const factors = {{ result.shap_factors| tojson }};
+    const prettify = s => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+    if (factors && factors.length) {
+        new Chart(document.getElementById('factorChart'), {
+            type: 'bar',
+            data: {
+                labels: factors.map(f => prettify(f.feature)),
+                datasets: [{
+                    data: factors.map(f => f.contribution),
+                    backgroundColor: factors.map(f => f.contribution >= 0 ? 'rgba(34,197,94,.75)' : 'rgba(239,68,68,.75)'),
+                    borderRadius: 4,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: c => (c.parsed.x >= 0 ? 'Raised' : 'Lowered') +
+                                ' the score by ' + Math.abs(c.parsed.x * 600).toFixed(0) + ' pts'
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: css('--text-faint'), font: { size: 11 } },
+                        grid: { color: css('--border-soft') }
+                    },
+                    y: {
+                        ticks: { color: css('--text-dim'), font: { size: 11 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    // Supply Chain Network
+    const nodes = new vis.DataSet([
+        { id: 1, label: 'Anchor Buyer 1', color: '#10b981', font: {color: '#fff'}, title: 'On-time payer' },
+        { id: 2, label: 'Applicant', color: '#3b82f6', font: {color: '#fff'} },
+        { id: 3, label: 'Supplier A', color: '#64748b', font: {color: '#fff'} },
+        { id: 4, label: 'Supplier B', color: '#64748b', font: {color: '#fff'} },
+        { id: 5, label: 'Anchor Buyer 2', color: '#ef4444', font: {color: '#fff'}, title: 'High default risk' }
+    ]);
+    const edges = new vis.DataSet([
+        { from: 1, to: 2, arrows: 'to', label: 'Revenue' },
+        { from: 5, to: 2, arrows: 'to', label: 'Revenue (Delayed)', color: {color: '#ef4444'} },
+        { from: 2, to: 3, arrows: 'to', label: 'Payments' },
+        { from: 2, to: 4, arrows: 'to', label: 'Payments' }
+    ]);
+    const container = document.getElementById('supplyChainNetwork');
+    const data = { nodes: nodes, edges: edges };
+    const options = { physics: { enabled: true }, interaction: { zoomView: false } };
+    new vis.Network(container, data, options);
+
+    // Radar Chart
+    new Chart(document.getElementById('radarChart'), {
+        type: 'radar',
+        data: {
+            labels: ['Digital Adoption', 'GST Regularity', 'Inflow Growth', 'Cash Cushion', 'Low Leverage'],
+            datasets: [{
+                label: 'Applicant',
+                data: [
+                    {{ (applicant.digital_adoption_ratio * 100)|default(0)|int }},
+                    {{ (applicant.gst_filing_regularity * 100)|default(0)|int }},
+                    {{ ((applicant.inflow_growth_rate_6m + 1)*50)|default(50)|int }}, 
+                    {{ (applicant.cash_flow_margin * 100)|default(0)|int }},
+                    {{ 100 - (applicant.repayment_burden_ratio * 100)|default(0)|int }}
+                ],
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                borderColor: '#3b82f6',
+                pointBackgroundColor: '#3b82f6'
+            }, {
+                label: 'Healthy Average',
+                data: [80, 90, 60, 40, 70],
+                backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                borderColor: '#10b981',
+                pointBackgroundColor: '#10b981'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { r: { ticks: { display: false } } }
+        }
+    });
+</script>
+{% endblock %}

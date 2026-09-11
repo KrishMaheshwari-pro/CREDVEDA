@@ -1,40 +1,93 @@
-
 {% extends "base.html" %}
-{% block title %}AI Features - CredVeda{% endblock %}
+{% block title %}How It Works — CredVeda{% endblock %}
 {% block content %}
-<div class="container mx-auto py-8">
-    <h1 class="text-3xl font-bold mb-8 text-center">Our AI-Powered Features</h1>
-    <div class="bg-dark-card p-6">
-        <p class="text-lg text-gray-400 mb-6">
-        CredVeda is built on a foundation of advanced Artificial Intelligence and Machine Learning to deliver deep, actionable credit insights. Our platform is designed to go beyond traditional metrics, providing a holistic and forward-looking view of creditworthiness.
-        </p>
+<div class="container">
 
-        <h3 class="text-2xl font-bold text-blue-accent mb-3">Predictive Credit Scoring with XGBoost</h3>
-        <p class="text-gray-400 mb-4">
-        The core of our platform is a powerful XGBoost (Extreme Gradient Boosting) model. This sophisticated machine learning algorithm is trained on a diverse dataset encompassing historical market data, fundamental financial indicators, and macroeconomic trends. It excels at uncovering complex, non-linear relationships within the data to produce highly accurate and dynamic credit scores, offering a significant improvement over static, traditional rating methods.
-        </p>
-
-        <h3 class="text-2xl font-bold text-blue-accent mb-3">Transparent Insights with Explainable AI (XAI)</h3>
-        <p class="text-gray-400 mb-4">
-        We eliminate the "black box" problem common in AI. By integrating SHAP (SHapley Additive exPlanations), our platform provides a clear, intuitive breakdown of every credit score. Users can see exactly how much each factor—such as market volatility, news sentiment, or a specific financial ratio—contributed to the final score. This transparency builds trust and empowers users to make decisions with confidence.
-        </p>
-
-        <h3 class="text-2xl font-bold text-blue-accent mb-3">Natural Language Processing (NLP) for Real-Time Sentiment Analysis</h3>
-        <p class="text-gray-400 mb-4">
-        Financial health isn't just about numbers. Our NLP engine analyzes unstructured data from news articles and earnings call transcripts to gauge market and company-specific sentiment. This qualitative data is quantified and fed into our model, allowing the platform to capture the impact of breaking news and management tone—factors that traditional models often miss until it's too late.
-        </p>
-
-        <h3 class="text-2xl font-bold text-blue-accent mb-3">Intelligent Anomaly Detection</h3>
-        <p class="text-gray-400 mb-4">
-        Our system continuously monitors key risk indicators to provide timely "Quantum Anomaly Alerts." This feature uses a rule-based engine to flag unusual events, such as:
-        <ul class="list-disc list-inside text-gray-400 ml-4 mt-2">
-            <li>Sudden spikes in market volatility.</li>
-            <li>Significant drops in news or transcript sentiment.</li>
-            <li>Detection of critical events related to debt, growth, or legal issues from text sources.</li>
-            <li>Abrupt changes in the predicted credit score.</li>
-        </ul>
-        </p>
+    <div class="section-head">
+        <span class="eyebrow"><i class="fas fa-diagram-project"></i> Methodology</span>
+        <h2>How CredVeda scores a borrower</h2>
+        <p>Six components, each one mapping to a requirement in Problem Statement #4.</p>
     </div>
+
+    <div class="grid grid-2 mb-3">
+
+        <div class="card">
+            <div class="feature-icon"><i class="fas fa-layer-group"></i></div>
+            <h3>1 · Alternative feature engineering</h3>
+            <p>The model never sees a bureau score as its primary input. Eighteen features are engineered from five
+            families of alternative signal:</p>
+            <ul class="muted" style="font-size:.875rem;padding-left:18px;margin-bottom:0">
+                <li><strong>Digital payment flows</strong> — inflow, 6-month growth, volatility, transaction count, bounce rate, digital adoption</li>
+                <li><strong>GST &amp; invoices</strong> — registration, filing regularity, overdue receivables</li>
+                <li><strong>Utility &amp; rent</strong> — on-time payment ratios</li>
+                <li><strong>Suppliers</strong> — concentration (HHI), repeat-business ratio</li>
+                <li><strong>Vintage</strong> — months of operating or income history</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <div class="feature-icon"><i class="fas fa-magnifying-glass-chart"></i></div>
+            <h3>2 · Explainable modelling</h3>
+            <p>Scores come from a Random Forest classifier. Every individual prediction is decomposed
+            feature-by-feature by walking the exact decision path each tree took — the same additive
+            tree-contribution method SHAP's <code>TreeExplainer</code> uses.</p>
+            <p class="mb-0">The decomposition is <strong>exact, not approximate</strong>: the base rate plus every
+            feature's contribution reproduces the model's output precisely. That's what makes the explanation
+            defensible rather than decorative.</p>
+        </div>
+
+        <div class="card">
+            <div class="feature-icon"><i class="fas fa-list-check"></i></div>
+            <h3>3 · Standard reason codes</h3>
+            <p>Raw contributions are useless to a loan officer, so each one resolves to a fixed reason code
+            (RC01–RC14) with a plain-language sentence carrying the applicant's actual numbers.</p>
+            <p class="mb-0">Two audiences, one decision: the <strong>lender view</strong> shows codes and
+            contributions for the ops team; the <strong>applicant view</strong> strips every model term out and
+            explains the same outcome in second person — so a rejection can be justified to the person receiving it.</p>
+        </div>
+
+        <div class="card">
+            <div class="feature-icon"><i class="fas fa-wave-square"></i></div>
+            <h3>4 · Thin-file handling</h3>
+            <p>A cash-heavy business may have no reliable transaction trail; an individual may have no GST history
+            at all. CredVeda measures how complete each applicant's footprint actually is — counting only the
+            signals that could exist for that entity type.</p>
+            <p class="mb-0">Below 75% completeness the UI stops showing a point score entirely and
+            <strong>leads with the band</strong>. The evidence doesn't support more precision, so we don't display
+            more precision.</p>
+        </div>
+
+        <div class="card">
+            <div class="feature-icon"><i class="fas fa-scale-balanced"></i></div>
+            <h3>5 · Fairness testing</h3>
+            <p>Gender, geography and business type are excluded from the feature set entirely — the model
+            cannot condition on them. They're used only afterwards, to audit outcomes.</p>
+            <p class="mb-0">The <a href="{{ url_for('fairness_page') }}">Fairness Report</a> applies the four-fifths
+            adverse-impact rule and publishes every group where the model comes out harsher, with an honest read on
+            whether the gap traces to bias or to genuine data sparsity.</p>
+        </div>
+
+        <div class="card">
+            <div class="feature-icon"><i class="fas fa-shield-halved"></i></div>
+            <h3>6 · Responsible lending guardrails</h3>
+            <p>Independent of the score, CredVeda computes a repayment burden ratio — existing plus proposed EMI
+            against estimated net cash flow.</p>
+            <p class="mb-0">Above 45% it cautions; above 65% it <strong>overrides approval outright</strong>.
+            A high score can never quietly push through a loan the borrower can't sustain.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="feature-icon"><i class="fas fa-arrow-trend-up"></i></div>
+        <h3>Bonus · The borrower improvement path</h3>
+        <p>For every applicant, CredVeda takes their own weakest behavioural signals, sets each one to a realistic
+        target drawn from the population distribution, and <strong>re-runs the trained model</strong> to measure what
+        actually changes. The two or three levers with the largest real gain are reported, with the point movement
+        each would produce over roughly six months.</p>
+        <p class="mb-0">It's a genuine what-if simulation against the live model — not a canned list of tips, and
+        not a guess. Structural facts the borrower can't change (vintage, whether a bureau file exists) are
+        deliberately excluded from the suggestions.</p>
+    </div>
+
 </div>
 {% endblock %}
-        
