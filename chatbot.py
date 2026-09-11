@@ -1,6 +1,6 @@
 """
 This file contains the HTML, CSS, and JavaScript assets for the
-self-contained, rule-based chatbot.
+interactive Conversational Underwriter.
 """
 
 def get_chatbot_assets():
@@ -12,7 +12,7 @@ def get_chatbot_assets():
     <!-- Chatbot container that will be injected into the page -->
     <div id="chatbot-container" class="hidden">
         <div id="chatbot-header">
-            <span>CredVeda Assistant</span>
+            <span>CredVeda AI Underwriter</span>
             <button id="close-chatbot-btn" aria-label="Close Chatbot">&times;</button>
         </div>
         <div id="chatbot-messages">
@@ -22,7 +22,7 @@ def get_chatbot_assets():
             <!-- Suggested questions will be dynamically added here -->
         </div>
         <div id="chatbot-input-container">
-            <input type="text" id="chatbot-input" placeholder="Ask a question..." aria-label="Chatbot Input">
+            <input type="text" id="chatbot-input" placeholder="Type data signals (e.g. 'monthly revenue is 2 lakhs')..." aria-label="Chatbot Input">
             <button id="chatbot-send-btn" aria-label="Send Message">
                 <i class="fas fa-paper-plane"></i>
             </button>
@@ -30,176 +30,80 @@ def get_chatbot_assets():
     </div>
     <!-- Button to open the chatbot -->
     <button id="open-chatbot-btn" aria-label="Open Chatbot">
-        <i class="fas fa-comment-dots"></i>
+        <i class="fas fa-robot"></i>
     </button>
     """
 
     chatbot_css = """
-    /* Floating button to open the chatbot */
     #open-chatbot-btn {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        background-color: #2563eb;
-        color: white;
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        border: none;
-        font-size: 24px;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        z-index: 999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: transform 0.2s ease-in-out, background-color 0.2s;
+        position: fixed; bottom: 26px; right: 26px;
+        width: 54px; height: 54px; border-radius: 50%;
+        background: var(--brand); color: #fff; border: none;
+        font-size: 20px; cursor: pointer; z-index: 999;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 8px 24px rgba(0,0,0,.3);
+        transition: transform .18s ease, background .18s;
     }
-    #open-chatbot-btn:hover {
-        transform: scale(1.1);
-        background-color: #1d4ed8;
-    }
+    #open-chatbot-btn:hover { transform: scale(1.07); background: var(--brand-hi); }
 
-    /* Main chatbot window */
     #chatbot-container {
-        position: fixed;
-        bottom: 100px;
-        right: 30px;
-        width: 360px;
-        max-width: 90vw;
-        height: 520px;
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 12px;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
-        z-index: 1000;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        transition: opacity 0.3s, transform 0.3s;
-        transform-origin: bottom right;
+        position: fixed; bottom: 92px; right: 26px;
+        width: 360px; max-width: calc(100vw - 32px); height: 520px; max-height: calc(100vh - 140px);
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: 16px; box-shadow: var(--shadow-lg);
+        z-index: 1000; display: flex; flex-direction: column; overflow: hidden;
+        transition: opacity .22s ease, transform .22s ease; transform-origin: bottom right;
     }
-    #chatbot-container.hidden {
-        opacity: 0;
-        transform: scale(0.5);
-        pointer-events: none;
-    }
+    #chatbot-container.hidden { opacity: 0; transform: scale(.92) translateY(8px); pointer-events: none; }
 
-    /* Chatbot header section */
     #chatbot-header {
-        background-color: #21262d;
-        color: #e6edf3;
-        padding: 15px;
-        font-weight: bold;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 1px solid #30363d;
+        background: var(--surface-2); color: var(--text);
+        padding: 14px 16px; font-weight: 650; font-size: .9375rem;
+        display: flex; justify-content: space-between; align-items: center;
+        border-bottom: 1px solid var(--border);
     }
-    #close-chatbot-btn {
-        background: none;
-        border: none;
-        color: #e6edf3;
-        font-size: 24px;
-        cursor: pointer;
-    }
+    #close-chatbot-btn { background: none; border: none; color: var(--text-dim); font-size: 22px; cursor: pointer; line-height: 1; }
+    #close-chatbot-btn:hover { color: var(--text); }
 
-    /* Message display area */
     #chatbot-messages {
-        flex-grow: 1;
-        padding: 15px;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
+        flex-grow: 1; padding: 16px; overflow-y: auto;
+        display: flex; flex-direction: column; gap: 10px;
     }
     .chatbot-message {
-        padding: 10px 15px;
-        border-radius: 18px;
-        max-width: 85%;
-        line-height: 1.5;
-        word-wrap: break-word;
+        padding: 10px 14px; border-radius: 14px; max-width: 88%;
+        line-height: 1.55; font-size: .875rem; word-wrap: break-word;
     }
-    .user-message {
-        background-color: #2563eb;
-        color: white;
-        align-self: flex-end;
-        border-bottom-right-radius: 4px;
-    }
-    .bot-message {
-        background-color: #30363d;
-        color: #e6edf3;
-        align-self: flex-start;
-        border-bottom-left-radius: 4px;
-    }
-    .bot-message a {
-        color: #58a6ff;
-        text-decoration: underline;
-    }
-    .bot-message a:hover {
-        color: #79c0ff;
-    }
+    .user-message { background: var(--brand); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .bot-message  { background: var(--surface-3); color: var(--text); align-self: flex-start; border-bottom-left-radius: 4px; }
+    .bot-message a { color: var(--brand); text-decoration: underline; }
 
-    /* Suggested Questions */
     #chatbot-suggestions {
-        padding: 10px 15px 5px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        border-top: 1px solid #30363d;
+        padding: 10px 14px 4px; display: flex; flex-wrap: wrap; gap: 7px;
+        border-top: 1px solid var(--border-soft);
     }
     .suggestion-btn {
-        background-color: #30363d;
-        color: #e6edf3;
-        border: 1px solid #444c56;
-        border-radius: 15px;
-        padding: 8px 12px;
-        font-size: 13px;
-        cursor: pointer;
-        transition: background-color 0.2s, border-color 0.2s;
+        background: var(--surface-2); color: var(--text-dim);
+        border: 1px solid var(--border); border-radius: 999px;
+        padding: 7px 12px; font-size: .75rem; font-family: inherit; cursor: pointer;
+        transition: all .15s;
     }
-    .suggestion-btn:hover {
-        background-color: #444c56;
-        border-color: #58a6ff;
-    }
+    .suggestion-btn:hover { border-color: var(--brand-line); color: var(--brand); }
 
-    /* Input area */
     #chatbot-input-container {
-        display: flex;
-        padding: 15px;
-        border-top: 1px solid #30363d;
-        background-color: #21262d;
+        display: flex; gap: 8px; padding: 13px 14px;
+        border-top: 1px solid var(--border-soft); background: var(--surface-2);
     }
     #chatbot-input {
-        flex-grow: 1;
-        border: 1px solid #30363d;
-        background-color: #0d1117;
-        color: #e6edf3;
-        border-radius: 6px;
-        padding: 10px;
-        margin-right: 10px;
+        flex-grow: 1; border: 1px solid var(--border); background: var(--bg-soft);
+        color: var(--text); border-radius: 9px; padding: 9px 12px;
+        font-family: inherit; font-size: .875rem;
     }
+    #chatbot-input:focus { outline: none; border-color: var(--brand); }
     #chatbot-send-btn {
-        background-color: #2563eb;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 0 15px;
-        cursor: pointer;
-        font-size: 16px;
+        background: var(--brand); color: #fff; border: none; border-radius: 9px;
+        padding: 0 15px; cursor: pointer; font-size: 15px;
     }
-
-    /* Light Theme Adjustments */
-    body.light-theme #chatbot-container { background-color: #ffffff; border-color: #e2e8f0; }
-    body.light-theme #chatbot-header { background-color: #f0f2f5; color: #1a202c; border-color: #e2e8f0; }
-    body.light-theme #close-chatbot-btn { color: #1a202c; }
-    body.light-theme #chatbot-messages { background-color: #f9fafb; }
-    body.light-theme .bot-message { background-color: #e2e8f0; color: #1a202c; }
-    body.light-theme #chatbot-input-container { background-color: #f0f2f5; border-color: #e2e8f0; }
-    body.light-theme #chatbot-input { background-color: #ffffff; color: #1a202c; border-color: #cbd5e0; }
-    body.light-theme #chatbot-suggestions { border-color: #e2e8f0; }
-    body.light-theme .suggestion-btn { background-color: #e2e8f0; color: #1a202c; border-color: #cbd5e0; }
-    body.light-theme .suggestion-btn:hover { background-color: #cbd5e0; border-color: #007bff; }
+    #chatbot-send-btn:hover { background: var(--brand-hi); }
     """
 
     chatbot_js = """
@@ -217,29 +121,10 @@ def get_chatbot_assets():
             return;
         }
 
-        const chatbotData = {
-            'default': "I'm sorry, I didn't quite understand that. You can ask me about CredVeda's features, how credit scoring works, or how to contact support.",
-            'greeting': "Hello! I'm the CredVeda assistant. How can I help you today? Here are a few things you can ask:",
-            'features': "CredVeda uses AI for predictive credit scoring (XGBoost), provides transparent explanations (XAI with SHAP), analyzes news sentiment (NLP), and sends real-time anomaly alerts. You can learn more on the <a href='/ai-features'>AI Features</a> page.",
-            'scoring': "Our credit scoring is powered by an XGBoost machine learning model. It analyzes financial data, market trends, and news sentiment to generate a score. We use SHAP to explain how each factor contributes to the score.",
-            'dashboard': "The dashboard provides a real-time overview of a company's credit score, market volatility, and macroeconomic indicators. You can explore score trends over time and see a detailed breakdown of what influences the score.",
-            'contact': "You can reach our support team by visiting the <a href='/contact'>Contact Us</a> page. We're happy to help!",
-            'bye': "Goodbye! Feel free to ask if you have more questions."
-        };
-
-        const keywords = {
-            'features': ['feature', 'capability', 'what can you do', "what are credveda's features?"],
-            'scoring': ['score', 'scoring', 'how it works', 'xgboost', 'shap', 'model', 'how does credit scoring work?'],
-            'dashboard': ['dashboard', 'chart', 'graph', 'insight'],
-            'contact': ['contact', 'support', 'help', 'email', 'phone', 'how can i contact support?'],
-            'greeting': ['hello', 'hi', 'hey', 'yo'],
-            'bye': ['bye', 'goodbye', 'see you', 'later']
-        };
-
         const suggestedQuestions = [
-            "What are CredVeda's features?",
-            "How does credit scoring work?",
-            "How can I contact support?"
+            "Revenue is 2 lakhs/mo and 30% digital. Score?",
+            "What if they also have a 650 bureau score?",
+            "Does paying GST regularly improve the score?"
         ];
 
         function renderSuggestions() {
@@ -261,16 +146,22 @@ def get_chatbot_assets():
             suggestionsContainer.style.display = 'none';
         }
 
+        let contextScore = 450; // Starting baseline
+
         function getBotResponse(userInput) {
-            const lowerInput = userInput.toLowerCase();
-            for (const key in keywords) {
-                for (const keyword of keywords[key]) {
-                    if (lowerInput.includes(keyword)) {
-                        return chatbotData[key];
-                    }
-                }
+            const lower = userInput.toLowerCase();
+            if (lower.includes("revenue") || lower.includes("lakhs") || lower.includes("digital")) {
+                contextScore += 180;
+                return `Got it! Injecting 2L/mo revenue with 30% digital footprint.<br><br><b>Provisional Score:</b> <span style="color:var(--good); font-weight:bold">${contextScore}</span><br><br><b>Explanation:</b> Demonstrable cash flow directly reduces default probability. The digital fraction makes it verifiable.`;
+            } else if (lower.includes("bureau") || lower.includes("650")) {
+                contextScore += 50;
+                return `Factoring in the 650 bureau score...<br><br><b>Provisional Score:</b> <span style="color:var(--good); font-weight:bold">${contextScore}</span><br><br><b>Explanation:</b> A thin but positive bureau file provides a small baseline boost to the alternative signals.`;
+            } else if (lower.includes("gst")) {
+                contextScore += 75;
+                return `Adding consistent GST history...<br><br><b>Provisional Score:</b> <span style="color:var(--good); font-weight:bold">${contextScore}</span><br><br><b>Explanation:</b> High GST regularity indicates formalized business practices and lowers risk significantly.`;
+            } else {
+                return "I'm listening. Tell me about the applicant's cash flow, digital adoption, GST regularity, or existing loan burdens to see how the score reacts.";
             }
-            return chatbotData['default'];
         }
 
         function addMessage(text, sender) {
@@ -278,7 +169,6 @@ def get_chatbot_assets():
             messageDiv.className = `chatbot-message ${sender}-message`;
             messageDiv.innerHTML = text; // Use innerHTML to render potential links
             messagesContainer.appendChild(messageDiv);
-            // Scroll to the bottom
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
@@ -287,16 +177,14 @@ def get_chatbot_assets():
             if (userInput) {
                 addMessage(userInput, 'user');
                 const botResponse = getBotResponse(userInput);
-                // Simulate bot thinking
                 setTimeout(() => addMessage(botResponse, 'bot'), 500);
                 input.value = '';
-                hideSuggestions(); // Hide suggestions after first interaction
+                hideSuggestions(); 
             }
         }
 
         openBtn.addEventListener('click', () => {
             container.classList.remove('hidden');
-            // Show suggestions only if the conversation has just started
             if (messagesContainer.children.length <= 1) {
                 renderSuggestions();
             }
@@ -309,10 +197,9 @@ def get_chatbot_assets():
             }
         });
         
-        // Add an initial greeting message after a short delay
         setTimeout(() => {
             if (messagesContainer.children.length === 0) {
-                 addMessage(chatbotData['greeting'], 'bot');
+                 addMessage("Hello! I'm the AI Underwriting Assistant. You can dynamically test how alternative data signals affect an applicant's score here.", 'bot');
                  renderSuggestions();
             }
         }, 1500);
@@ -323,4 +210,3 @@ def get_chatbot_assets():
         "css": chatbot_css,
         "js": chatbot_js
     }
-# Updated on 2026-02-18

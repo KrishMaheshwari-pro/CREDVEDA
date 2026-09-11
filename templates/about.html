@@ -1,56 +1,63 @@
-
 {% extends "base.html" %}
-{% block title %}About Us - CredVeda{% endblock %}
+{% block title %}About — CredVeda{% endblock %}
 {% block content %}
-<div class="container mx-auto py-8">
-    <h1 class="text-3xl font-bold mb-8 text-center">About Us</h1>
-    <div class="bg-dark-card p-6 rounded-lg shadow-lg">
-        <h2 class="text-2xl font-bold text-blue-accent mb-4">Our Mission: To Bring Clarity and Confidence to Credit Risk Analysis</h2>
-        <p class="text-gray-400 mb-6">
-            In today's volatile economic landscape, traditional credit assessment models are no longer sufficient. Relying on static, historical data often means missing the critical, forward-looking signals that truly define a company's financial health. Decisions are made with an incomplete picture, exposing institutions to unforeseen risks.
-        </p>
-        <p class="text-gray-400 mb-6">
-            At CredVeda, we are changing that.
-        </p>
-        <p class="text-gray-400 mb-6">
-            We are a team of financial analysts, data scientists, and software engineers dedicated to building the future of credit intelligence. We founded this platform on a simple but powerful belief: that the best financial decisions are made with a clear, transparent, and dynamic understanding of risk.
-        </p>
-        <p class="text-gray-400 mb-6">
-            Our platform moves beyond outdated methods by harnessing the power of artificial intelligence to analyze a vast spectrum of data in real-time. We combine structured financial metrics with unstructured market signals—from news sentiment to macroeconomic trends—to generate a holistic, forward-looking credit score.
-        </p>
-        <p class="text-gray-400 mb-6">
-            But we don't just provide a number. We provide understanding. Through our commitment to Explainable AI (XAI), we deliver the key drivers behind every score, empowering our clients not just to see the risk, but to understand it. Our goal is to replace uncertainty with insight, enabling you to navigate the complexities of the market with confidence.
-        </p>
+<div class="container-narrow">
+
+    <div class="section-head">
+        <span class="eyebrow"><i class="fas fa-building-columns"></i> About</span>
+        <h2>No file, no loan</h2>
+        <p>Why a viable business gets rejected by a system that never actually looked at it.</p>
     </div>
 
-    <div class="bg-dark-card p-6 rounded-lg shadow-lg mt-8">
-        <h2 class="text-2xl font-bold text-blue-accent mb-4">Our AI-Powered Platform: The Technology Driving Smarter Decisions</h2>
-        <p class="text-gray-400 mb-6">
-            Our platform is built on a sophisticated AI engine designed to deliver unparalleled depth and accuracy in credit risk assessment. We go beyond the surface to provide a multi-dimensional view of financial health.
-        </p>
-        
-        <h3 class="text-xl font-bold text-white mb-3">1. Hybrid Data Fusion</h3>
-        <p class="text-gray-400 mb-4">Our models don't just look at balance sheets. We synthesize thousands of data points from diverse sources, including:</p>
-        <ul class="list-disc list-inside text-gray-400 mb-4 ml-4">
-            <li><b>Structured Financial Data:</b> In-depth analysis of company fundamentals, historical performance, and key financial ratios.</li>
-            <li><b>Unstructured Market Signals:</b> Real-time processing of global news, financial reports, and sentiment analysis to capture the market's perception and identify emerging risks or opportunities before they impact the numbers.</li>
-            <li><b>Macroeconomic Indicators:</b> Integration of key economic trends to understand how broader market forces will affect a company's performance.</li>
-        </ul>
-
-        <h3 class="text-xl font-bold text-white mb-3">2. Advanced Predictive Modeling</h3>
-        <p class="text-gray-400 mb-4">At the core of our platform is a suite of advanced machine learning models, including Gradient Boosting, Random Forests, and custom-trained Neural Networks. Unlike traditional models that are purely retrospective, our algorithms are trained to identify complex, non-linear patterns and forecast future creditworthiness with a high degree of accuracy. The system continuously learns and adapts as new data becomes available.</p>
-
-        <h3 class="text-xl font-bold text-white mb-3">3. Explainable AI (XAI) for Full Transparency</h3>
-        <p class="text-gray-400 mb-4">A black-box credit score is a liability. Our commitment to transparency is powered by Explainable AI. For every score we generate, our platform provides a clear, concise breakdown of the top contributing factors (both positive and negative). This allows you to:</p>
-        <ul class="list-disc list-inside text-gray-400 mb-4 ml-4">
-            <li><b>Trust the Score:</b> Understand the "why" behind the "what."</li>
-            <li><b>Conduct Deeper Due Diligence:</b> Immediately focus on the most critical variables affecting a company's risk profile.</li>
-            <li><b>Communicate with Confidence:</b> Justify decisions to stakeholders with clear, data-backed evidence.</li>
-        </ul>
-
-        <h3 class="text-xl font-bold text-white mb-3">4. Real-Time Monitoring and Alerts</h3>
-        <p class="text-gray-400 mb-4">Risk is not static. Our platform operates in near real-time, constantly ingesting new data and re-evaluating scores. This ensures you are always working with the most current assessment of a company's financial standing, allowing you to react swiftly to changing conditions.</p>
+    <div class="card mb-3">
+        <p>A large share of Indian borrowers and micro-enterprises have little or no formal credit history.
+        A bureau score either doesn't exist for them or is meaningless — so lenders respond the only way an
+        opaque system allows: reject outright, or price the risk crudely with a blanket high rate.</p>
+        <p class="mb-0">Either way, working capital stays out of reach of businesses that are, in reality,
+        perfectly capable of repaying. The information to prove it exists — it's just not in the bureau.</p>
     </div>
+
+    <div class="card mb-3">
+        <p class="card-title"><i class="fas fa-database" style="color:var(--brand)"></i> What we score instead</p>
+        <p>The data these borrowers already generate every day:</p>
+        <ul class="muted" style="padding-left:18px">
+            <li><strong>Digital payment flows</strong> — how much moves through their account, whether it's growing, how steady it is, how often payments bounce</li>
+            <li><strong>GST &amp; invoice history</strong> — filing discipline and overdue receivables</li>
+            <li><strong>Utility &amp; rent payments</strong> — the most universal proof of reliability there is</li>
+            <li><strong>Supplier relationships</strong> — concentration risk and repeat-business stability</li>
+            <li><strong>Business vintage</strong> — how far the track record actually goes back</li>
+        </ul>
+        <p class="mb-0">Gender, geography and business type are deliberately kept <em>out</em> of the model. They
+        appear only in the <a href="{{ url_for('fairness_page') }}">fairness audit</a>, to verify the model isn't
+        systematically harsher on any group — never as an input to someone's score.</p>
+    </div>
+
+    <div class="card mb-3">
+        <p class="card-title"><i class="fas fa-scale-balanced" style="color:var(--good)"></i> Accurate isn't enough</p>
+        <p>A model that scores well on average but is opaque, unfair, or careless about affordability isn't good
+        enough for this problem — it just automates the same exclusion faster. So CredVeda also:</p>
+        <ul class="muted" style="padding-left:18px;margin-bottom:0">
+            <li>Explains every score in <strong>plain language</strong>, in both a lender view and an applicant view</li>
+            <li>Returns a <strong>confidence band</strong> when the data is thin, instead of faking precision</li>
+            <li><strong>Audits itself</strong> across geography, gender and business type, and publishes the gaps</li>
+            <li><strong>Refuses</strong> approvals that would create an unsustainable repayment burden</li>
+            <li>Shows every borrower a concrete <strong>six-month path</strong> to a better score</li>
+        </ul>
+    </div>
+
+    <div class="alert alert-info">
+        <span class="alert-icon"><i class="fas fa-flask"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">A note on the data</p>
+            <p class="alert-text">
+                This build runs on a large, realistic <strong>synthetic</strong> population of individuals and small
+                businesses. Real UPI/Account Aggregator feeds, the GST portal and credit bureaus all require
+                regulated data-sharing partnerships that aren't available for a hackathon build. Everything
+                downstream — the feature schema, model, explainability, fairness audit and guardrails — is written
+                against a fixed schema, so swapping in real connectors is a data-layer change, not a rebuild.
+            </p>
+        </div>
+    </div>
+
 </div>
 {% endblock %}
-        

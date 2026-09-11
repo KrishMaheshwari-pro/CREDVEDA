@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}Lending Portfolio — CredVeda{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+{% block content %}
+<div class="container">
+
+    <div class="card-head mb-3">
+        <div>
+            <h1 class="mb-1">Lending portfolio</h1>
+            <p class="muted mb-0" style="max-width:72ch">
+                Scoring is only half the problem. This is the other half: what happened to the money after we
+                said yes — and whether the scores we gave at funding time turned out to be right.
+            </p>
+        </div>
+    </div>
+
+    {% if stats.n_loans == 0 %}
+    <div class="card">
+        <div class="empty">
+            <div class="empty-icon"><i class="fas fa-hand-holding-dollar"></i></div>
+            <h3>No loans disbursed yet</h3>
+            <p class="muted">Open any approved applicant from the <a href="{{ url_for('dashboard_page') }}">applicant list</a>
+            and fund them — then come back here and advance the clock to watch the book perform.</p>
+            <a href="{{ url_for('dashboard_page') }}" class="btn btn-primary mt-2">Find an applicant to fund</a>
+        </div>
+    </div>
+    {% else %}
+
+    <!-- Time machine -->
+    <div class="card mb-3" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div>
+            <p class="card-title mb-0"><i class="fas fa-forward" style="color:var(--brand)"></i> Advance the clock</p>
+            <p class="card-sub">Simulates the next EMI cycle for every active loan</p>
+        </div>
+        <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+            {% for m in [1, 3, 6] %}
+            <form method="post" action="{{ url_for('simulate_advance') }}">
+                <input type="hidden" name="months" value="{{ m }}">
+                <button class="btn btn-ghost btn-sm" type="submit">+{{ m }} month{{ 's' if m > 1 }}</button>
+            </form>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if session.get('last_simulation') %}
+    {% set sim = session.get('last_simulation') %}
+    <div class="alert alert-info mb-3">
+        <span class="alert-icon"><i class="fas fa-clock-rotate-left"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">Advanced {{ sim.months }} month{{ 's' if sim.months > 1 }}</p>
+            <p class="alert-text">
+                {{ sim.instalments }} instalments fell due —
+                <strong style="color:var(--good)">{{ sim.paid }} paid on time</strong>,
+                {{ sim.late }} late, <strong style="color:var(--bad)">{{ sim.missed }} missed</strong>.
+                {{ sim.closed }} loan{{ 's' if sim.closed != 1 }} fully repaid, {{ sim.defaulted }} written off.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Book stats -->
+    <div class="grid grid-4 mb-3">
+        <div class="stat">
+            <p class="stat-label">Disbursed</p>
+            <p class="stat-value">₹{{ '{:,.0f}'.format(stats.disbursed) }}</p>
+            <p class="stat-foot">across {{ stats.n_loans }} loan{{ 's' if stats.n_loans != 1 }}</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Collected</p>
+            <p class="stat-value" style="color:var(--good)">₹{{ '{:,.0f}'.format(stats.collected) }}</p>
+            <p class="stat-foot">{{ stats.instalments_due }} instalments settled</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">On-time rate</p>
+            <p class="stat-value">{{ (stats.on_time_rate * 100)|round(1) if stats.on_time_rate is not none else '—' }}{{ '%' if stats.on_time_rate is not none }}</p>
+            <p class="stat-foot">of settled instalments</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Written off</p>
+            <p class="stat-value" style="color:var({{ '--bad' if stats.defaulted else '--text' }})">{{ stats.defaulted }}</p>
+            <p class="stat-foot">₹{{ '{:,.0f}'.format(stats.overdue_amt) }} missed · {{ stats.active }} still active</p>
+        </div>
+    </div>
+
+    <!-- The validation story -->
+    {% if buckets %}
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0"><i class="fas fa-bullseye" style="color:var(--brand)"></i> Did the score actually predict repayment?</p>
+                <p class="card-sub">Loans grouped by the probability the model gave them at funding time, against what those borrowers actually did</p>
+            </div>
+        </div>
+        <div class="grid grid-side">
+            <div class="chart-box"><canvas id="backtestChart" height="240"></canvas></div>
+            <div>
+                <p class="muted" style="font-size:.875rem">
+                    This is the model's report card measured on money actually lent, not a held-out test split.
+                    Repayment behaviour is driven by each borrower's true creditworthiness, which the model never
+                    sees — so if the green bars climb left to right, the score is carrying real information.
+                </p>
+                <p class="help">
+                    The two bars measure different things and are not expected to match in level: blue is the
+                    predicted probability of a <em>good overall outcome</em>, green is the share of
+                    <em>individual instalments</em> paid on time. A borrower can end up a poor outcome while still
+                    paying most instalments, which is why green sits higher. What matters here is that they move
+                    together — that is discrimination. Calibration is tested separately on the
+                    <a href="{{ url_for('models_page') }}">model report card</a>.
+                </p>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Predicted band</th><th>Loans</th><th>Predicted</th><th>Actual on-time</th></tr></thead>
+                        <tbody>
+                            {% for b in buckets %}
+                            <tr>
+                                <td class="strong">{{ b.label }}</td>
+                                <td>{{ b.n_loans }}</td>
+                                <td>{{ (b.predicted * 100)|round(0)|int }}%</td>
+                                <td class="strong" style="color:var(--{{ 'good' if b.actual_on_time >= 0.8 else ('warn' if b.actual_on_time >= 0.6 else 'bad') }})">
+                                    {{ (b.actual_on_time * 100)|round(0)|int }}%</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Collections queue -->
+    {% if alerts %}
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0" style="color:var(--bad)"><i class="fas fa-bell"></i> Collections queue</p>
+                <p class="card-sub">Borrowers who have missed at least one instalment</p>
+            </div>
+            <span class="chip chip-bad">{{ alerts|length }}</span>
+        </div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Loan</th><th>Borrower</th><th>Profile</th><th>Missed</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    {% for a in alerts %}
+                    <tr>
+                        <td class="mono strong">{{ a.loan_id }}</td>
+                        <td class="mono">{{ a.applicant_id }}</td>
+                        <td>{{ a.business_type }}<br><small class="faint">{{ a.geography_tier }}</small></td>
+                        <td><span class="chip chip-bad">{{ a.missed }} missed</span></td>
+                        <td>
+                            {% if a.status == 'defaulted' %}<span class="chip chip-bad">Written off</span>
+                            {% else %}<span class="chip chip-warn">Active</span>{% endif %}
+                        </td>
+                        <td><a href="{{ url_for('loan_detail', loan_id=a.loan_id) }}" class="btn btn-ghost btn-sm">Open</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- All loans -->
+    <div class="card">
+        <div class="card-head">
+            <p class="card-title mb-0">All loans</p>
+        </div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr><th>Loan</th><th>Borrower</th><th>Principal</th><th>EMI</th>
+                        <th>Progress</th><th>Score at funding</th><th>Status</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for l in loans %}
+                    <tr>
+                        <td class="mono strong">{{ l.loan_id }}</td>
+                        <td>
+                            <span class="mono">{{ l.applicant_id }}</span><br>
+                            <small class="faint">{{ l.business_type }}</small>
+                        </td>
+                        <td>₹{{ '{:,.0f}'.format(l.principal) }}<br><small class="faint">{{ l.tenure_months }} mo</small></td>
+                        <td>₹{{ '{:,.0f}'.format(l.monthly_emi) }}</td>
+                        <td>
+                            <span style="color:var(--good)">{{ l.paid }}</span> /
+                            <span style="color:var(--warn)">{{ l.late }}</span> /
+                            <span style="color:var(--bad)">{{ l.missed }}</span>
+                            <br><small class="faint">paid / late / missed of {{ l.tenure_months }}</small>
+                        </td>
+                        <td class="strong">{{ l.score_at_funding }}</td>
+                        <td>
+                            {% if l.status == 'defaulted' %}<span class="chip chip-bad">Written off</span>
+                            {% elif l.status == 'closed' %}<span class="chip chip-good">Repaid</span>
+                            {% else %}<span class="chip chip-info">Active</span>{% endif %}
+                        </td>
+                        <td><a href="{{ url_for('loan_detail', loan_id=l.loan_id) }}" class="btn btn-ghost btn-sm">Open</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if buckets %}
+<script>
+    const buckets = {{ buckets|tojson }};
+    const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    new Chart(document.getElementById('backtestChart'), {
+        type: 'bar',
+        data: {
+            labels: buckets.map(b => b.label),
+            datasets: [
+                { label: 'Predicted at funding', data: buckets.map(b => +(b.predicted * 100).toFixed(1)),
+                  backgroundColor: 'rgba(79,140,255,.75)', borderRadius: 4 },
+                { label: 'Actually paid on time', data: buckets.map(b => +(b.actual_on_time * 100).toFixed(1)),
+                  backgroundColor: 'rgba(34,197,94,.75)', borderRadius: 4 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: css('--text-dim'), font: { size: 11 } } } },
+            scales: {
+                x: { ticks: { color: css('--text-faint'), font: { size: 11 } }, grid: { display: false },
+                     title: { display: true, text: 'Predicted repayment probability at funding',
+                              color: css('--text-faint'), font: { size: 11 } } },
+                y: { beginAtZero: true, max: 100,
+                     ticks: { color: css('--text-faint'), font: { size: 11 }, callback: v => v + '%' },
+                     grid: { color: css('--border-soft') } }
+            }
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}

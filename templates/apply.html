@@ -1,0 +1,562 @@
+{% extends "base.html" %}
+{% block title %}New Assessment — CredVeda{% endblock %}
+{% block content %}
+<div class="container">
+
+    <div class="mb-3">
+        <h1 class="mb-1">New assessment</h1>
+        <p class="muted mb-0" style="max-width:70ch">
+            Enter an applicant's alternative-data profile and the trained model will score it live — with reason
+            codes, affordability guardrails and an improvement path. Nothing here is looked up; it's a real prediction.
+        </p>
+    </div>
+
+    <div class="card mb-3" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <span class="label mb-0 nowrap"><i class="fas fa-wand-magic-sparkles" style="color:var(--brand)"></i> Try a
+            scenario:</span>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="loadPreset('strong')">Established kirana
+            store</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="loadPreset('thin')">Thin-file rural worker</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="loadPreset('overleveraged')">Over-leveraged
+            applicant</button>
+        <span class="help mb-0" style="margin-left:auto">Fills the form — then hit Compute score</span>
+    </div>
+
+    <div class="card mb-3" style="border-left: 4px solid var(--brand); background: var(--bg-soft);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div>
+                <h3 style="margin-top:0; margin-bottom:4px;"><i class="fas fa-link" style="color:var(--brand)"></i> Connect via Account Aggregator</h3>
+                <p class="muted mb-0" style="font-size:0.9rem">Instantly fetch alternative data signals from banks, GST networks, and utilities to pre-fill the application securely.</p>
+            </div>
+            <button type="button" class="btn btn-primary" id="btnAAConnect" onclick="simulateAA()">
+                <i class="fas fa-bolt"></i> Connect & Fetch Data
+            </button>
+        </div>
+        <div id="aa-progress" style="display:none; margin-top: 15px;">
+            <p class="muted mb-1" id="aa-status" style="font-size:0.85rem">Contacting FIPs...</p>
+            <div style="width:100%; background:var(--border); height:6px; border-radius:3px; overflow:hidden;">
+                <div id="aa-bar" style="width:0%; background:var(--brand); height:100%; transition: width 0.3s;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid {{ 'grid-side' if result else '' }}">
+
+        <!-- ---------------- FORM ---------------- -->
+        <form method="post" class="card" id="assessForm">
+
+            <div class="formsection">
+                <div class="formsection-head"><span class="formsection-num">1</span>
+                    <h3>Applicant profile</h3>
+                </div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label">Entity type</label>
+                        <select name="entity_type" id="entity_type" class="select" onchange="onEntityTypeChange()">
+                            <option value="Small Business" {{ 'selected' if form_values.entity_type=='Small Business'
+                                }}>Small Business</option>
+                            <option value="Individual" {{ 'selected' if form_values.entity_type=='Individual' }}>
+                                Individual</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label">Business / occupation</label>
+                        <select name="business_type" id="business_type" class="select"></select>
+                    </div>
+                    <div class="field">
+                        <label class="label">Geography <span class="hint">· not scored</span></label>
+                        <select name="geography_tier" id="geography_tier" class="select">
+                            {% for t in ['Tier 1', 'Tier 2', 'Tier 3', 'Rural'] %}
+                            <option {{ 'selected' if form_values.geography_tier==t }}>{{ t }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label">Gender <span class="hint">· not scored</span></label>
+                        <select name="gender" class="select">
+                            {% for g in ['Male', 'Female', 'Other'] %}
+                            <option {{ 'selected' if form_values.gender==g }}>{{ g }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field" style="grid-column:1/-1">
+                        <label class="label">Operating / income history</label>
+                        <div class="input-group">
+                            <input type="number" name="vintage_months" id="vintage_months" class="input" min="0"
+                                value="{{ form_values.vintage_months or 36 }}">
+                            <span class="input-suffix">months</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="formsection">
+                <div class="formsection-head"><span class="formsection-num">2</span>
+                    <h3>Digital payment flow</h3>
+                </div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label">Avg monthly digital inflow</label>
+                        <div class="input-group">
+                            <input type="number" name="avg_monthly_inflow" id="avg_monthly_inflow" class="input" min="0"
+                                value="{{ form_values.avg_monthly_inflow or 90000 }}">
+                            <span class="input-suffix">₹</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Monthly transactions</label>
+                        <input type="number" name="monthly_txn_count" id="monthly_txn_count" class="input" min="0"
+                            value="{{ form_values.monthly_txn_count or 48 }}">
+                    </div>
+                    <div class="field">
+                        <label class="label">Payment bounce rate</label>
+                        <div class="input-group">
+                            <input type="number" name="txn_bounce_rate" id="txn_bounce_rate" class="input" min="0"
+                                max="100" step="0.1" value="{{ form_values.txn_bounce_rate or 4 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Digital adoption <span class="hint">· share traceable</span></label>
+                        <div class="input-group">
+                            <input type="number" name="digital_adoption_ratio" id="digital_adoption_ratio" class="input"
+                                min="0" max="100" value="{{ form_values.digital_adoption_ratio or 65 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Inflow growth <span class="hint">· last 6 mo</span></label>
+                        <div class="input-group">
+                            <input type="number" name="inflow_growth_rate_6m" id="inflow_growth_rate_6m" class="input"
+                                step="0.1" value="{{ form_values.inflow_growth_rate_6m or 4 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Month-to-month volatility</label>
+                        <div class="input-group">
+                            <input type="number" name="inflow_volatility_cv" id="inflow_volatility_cv" class="input"
+                                min="0" max="150" value="{{ form_values.inflow_volatility_cv or 18 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="formsection" id="business-only-1">
+                <div class="formsection-head"><span class="formsection-num">3</span>
+                    <h3>GST &amp; invoicing</h3>
+                </div>
+                <div class="checkrow">
+                    <input type="checkbox" name="gst_registered" id="gst_registered" {{ 'checked' if
+                        form_values.gst_registered=='on' }} onchange="toggleGst()">
+                    <label for="gst_registered">This business is GST registered</label>
+                </div>
+                <div class="grid grid-2" style="gap:0 16px" id="gst-fields">
+                    <div class="field">
+                        <label class="label">Returns filed on time</label>
+                        <div class="input-group">
+                            <input type="number" name="gst_filing_regularity" id="gst_filing_regularity" class="input"
+                                min="0" max="100" value="{{ form_values.gst_filing_regularity or 85 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Invoices overdue</label>
+                        <div class="input-group">
+                            <input type="number" name="overdue_invoice_ratio" id="overdue_invoice_ratio" class="input"
+                                min="0" max="100" value="{{ form_values.overdue_invoice_ratio or 10 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="formsection">
+                <div class="formsection-head"><span class="formsection-num">4</span>
+                    <h3>Utility &amp; rent payments</h3>
+                </div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label">Utility bills paid on time</label>
+                        <div class="input-group">
+                            <input type="number" name="utility_ontime_ratio" id="utility_ontime_ratio" class="input"
+                                min="0" max="100" value="{{ form_values.utility_ontime_ratio or 88 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Rent paid on time</label>
+                        <div class="input-group">
+                            <input type="number" name="rent_ontime_ratio" id="rent_ontime_ratio" class="input" min="0"
+                                max="100" value="{{ form_values.rent_ontime_ratio or 90 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="formsection" id="business-only-2">
+                <div class="formsection-head"><span class="formsection-num">5</span>
+                    <h3>Supplier &amp; buyer relationships</h3>
+                </div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label">Concentration <span class="hint">· higher = riskier</span></label>
+                        <div class="input-group">
+                            <input type="number" name="supplier_concentration_hhi" id="supplier_concentration_hhi"
+                                class="input" min="0" max="100"
+                                value="{{ form_values.supplier_concentration_hhi or 28 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Repeat business</label>
+                        <div class="input-group">
+                            <input type="number" name="repeat_supplier_ratio" id="repeat_supplier_ratio" class="input"
+                                min="0" max="100" value="{{ form_values.repeat_supplier_ratio or 62 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="formsection">
+                <div class="formsection-head"><span class="formsection-num">6</span>
+                    <h3>Existing credit</h3>
+                </div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label">Open loans</label>
+                        <input type="number" name="existing_loan_count" id="existing_loan_count" class="input" min="0"
+                            value="{{ form_values.existing_loan_count or 0 }}">
+                    </div>
+                    <div class="field">
+                        <label class="label">Existing EMI</label>
+                        <div class="input-group">
+                            <input type="number" name="existing_monthly_emi" id="existing_monthly_emi" class="input"
+                                min="0" value="{{ form_values.existing_monthly_emi or 0 }}">
+                            <span class="input-suffix">₹/mo</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="checkrow">
+                    <input type="checkbox" name="bureau_score_available" id="bureau_score_available" {{ 'checked' if
+                        form_values.bureau_score_available=='on' }} onchange="toggleBureau()">
+                    <label for="bureau_score_available">Has an existing credit bureau record</label>
+                </div>
+                <div class="field" id="bureau-fields">
+                    <label class="label">Bureau score</label>
+                    <input type="number" name="bureau_score_raw" id="bureau_score_raw" class="input"
+                        min="{{ score_min }}" max="{{ score_max }}" value="{{ form_values.bureau_score_raw or 680 }}">
+                </div>
+            </div>
+
+            <div class="formsection">
+                <div class="formsection-head"><span class="formsection-num">7</span>
+                    <h3>Loan request &amp; affordability</h3>
+                </div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label">Monthly expenses</label>
+                        <div class="input-group">
+                            <input type="number" name="monthly_expenses" id="monthly_expenses" class="input" min="0"
+                                value="{{ form_values.monthly_expenses or 62000 }}">
+                            <span class="input-suffix">₹</span>
+                        </div>
+                        <p class="help">Used to estimate what's left over each month</p>
+                    </div>
+                    <div class="field">
+                        <label class="label">Requested amount</label>
+                        <div class="input-group">
+                            <input type="number" name="requested_loan_amount" id="requested_loan_amount" class="input"
+                                min="0" value="{{ form_values.requested_loan_amount or 180000 }}">
+                            <span class="input-suffix">₹</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Tenure</label>
+                        <select name="requested_tenure_months" id="requested_tenure_months" class="select">
+                            {% for t in [12, 18, 24, 36, 48] %}
+                            <option value="{{ t }}" {{ 'selected' if form_values.get('requested_tenure_months',
+                                24)|int==t }}>{{ t }} months</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg mt-2">
+                <i class="fas fa-bolt"></i> Compute score
+            </button>
+        </form>
+
+        <!-- ---------------- RESULT ---------------- -->
+        {% if result %}
+        {% set ARC = 314.159 %}
+        {% set span = (score_max - score_min) %}
+        {% set fill_offset = ARC * (1 - ((result.credit_score - score_min) / span)) %}
+        {% set critical = result.guardrail_flags | selectattr('severity', 'equalto', 'critical') | list %}
+
+        <div>
+            <div class="card mb-3" id="resultCard">
+                <div class="card-head">
+                    <p class="card-title mb-0">Result</p>
+                    {% if 'Low' in result.confidence_label %}<span class="chip chip-bad chip-dot">Low confidence</span>
+                    {% elif 'Medium' in result.confidence_label %}<span class="chip chip-warn chip-dot">Medium
+                        confidence</span>
+                    {% else %}<span class="chip chip-good chip-dot">High confidence</span>{% endif %}
+                </div>
+
+                <div class="gauge-wrap">
+                    <div class="gauge">
+                        <svg viewBox="0 0 240 148">
+                            <path class="gauge-track" d="M 20 120 A 100 100 0 0 1 220 120" />
+                            <path class="gauge-fill" d="M 20 120 A 100 100 0 0 1 220 120"
+                                stroke="var(--{{ result.tier_tone }})" stroke-dasharray="{{ ARC }}"
+                                stroke-dashoffset="{{ fill_offset|round(2) }}" />
+                        </svg>
+                        <div class="gauge-center">
+                            {% if result.band_first %}
+                            <span class="gauge-range" style="color:var(--{{ result.tier_tone }})">{{ result.band_low
+                                }}–{{ result.band_high }}</span>
+                            <div class="gauge-tier faint">estimated range</div>
+                            {% else %}
+                            <span class="gauge-score" style="color:var(--{{ result.tier_tone }})">{{ result.credit_score
+                                }}</span>
+                            <div class="gauge-tier" style="color:var(--{{ result.tier_tone }})">{{ result.tier_label }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="gauge-scale"><span>{{ score_min }}</span><span>{{ score_max }}</span></div>
+                </div>
+
+                {% if result.band_first %}
+                <p class="help center mt-2">
+                    Only {{ (result.data_completeness * 100)|round(0)|int }}% of expected signals were available —
+                    reported as a band rather than a false-precision score.
+                </p>
+                {% endif %}
+
+                <div class="mt-3">
+                    {% if critical %}
+                    <div class="alert alert-critical" style="margin:0">
+                        <span class="alert-icon"><i class="fas fa-ban"></i></span>
+                        <div class="alert-body">
+                            <p class="alert-title">Declined — affordability</p>
+                            <p class="alert-text">{{ critical[0].message }}</p>
+                        </div>
+                    </div>
+                    {% elif result.approved %}
+                    <div class="alert alert-ok" style="margin:0">
+                        <span class="alert-icon"><i class="fas fa-circle-check"></i></span>
+                        <div class="alert-body">
+                            <p class="alert-title">Meets approval criteria</p>
+                            <p class="alert-text">At or above the {{ approval_threshold }} cut-off, no guardrail
+                                triggered.</p>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warn" style="margin:0">
+                        <span class="alert-icon"><i class="fas fa-circle-exclamation"></i></span>
+                        <div class="alert-body">
+                            <p class="alert-title">Below cut-off — manual review</p>
+                            <p class="alert-text">Below the {{ approval_threshold }} approval threshold.</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% for g in result.guardrail_flags %}{% if g.severity != 'critical' %}
+                <div class="alert alert-warn mt-2" style="margin-bottom:0">
+                    <span class="alert-icon"><i class="fas fa-triangle-exclamation"></i></span>
+                    <div class="alert-body">
+                        <p class="alert-text">{{ g.message }}</p>
+                    </div>
+                </div>
+                {% endif %}{% endfor %}
+
+                <hr class="divider">
+                <div class="datarow">
+                    <dt>Estimated net cash flow</dt>
+                    <dd>₹{{ '{:,.0f}'.format(result.computed_net_cashflow) }}/mo</dd>
+                </div>
+                <div class="datarow" style="border-bottom:none">
+                    <dt>Proposed EMI</dt>
+                    <dd>₹{{ '{:,.0f}'.format(result.computed_proposed_emi) }}/mo</dd>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <p class="card-title">Why this score</p>
+                {% for r in result.reason_codes %}
+                <div class="reason">
+                    <span class="reason-mark {{ 'reason-up' if r.impact == 'positive' else 'reason-down' }}">{{ '+' if
+                        r.impact == 'positive' else '−' }}</span>
+                    <div class="reason-body">
+                        <div class="reason-top">
+                            <span class="reason-code">{{ r.code }}</span>
+                            <span class="reason-label">{{ r.label }}</span>
+                        </div>
+                        <p class="reason-text">{{ r.text }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if result.improvement_path %}
+            <div class="card">
+                <div class="card-head">
+                    <div>
+                        <p class="card-title mb-0"><i class="fas fa-arrow-trend-up" style="color:var(--good)"></i>
+                            Improvement path</p>
+                        <p class="card-sub">Biggest levers over the next ~6 months</p>
+                    </div>
+                </div>
+                <div class="grid" style="gap:10px">
+                    {% for imp in result.improvement_path %}
+                    <div class="lever">
+                        <span class="lever-gain">+{{ imp.estimated_point_gain }}</span>
+                        <div>
+                            <p class="lever-label">{{ imp.label }}</p>
+                            <p class="lever-note">points if sustained</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const businessTypeChoices = {{ business_type_choices| tojson }};
+    const formBusinessType = {{ (form_values.business_type or '')| tojson }};
+
+    const PRESETS = {
+        strong: {
+            entity_type: 'Small Business', business_type: 'Retail / Kirana Store', geography_tier: 'Tier 2',
+            vintage_months: 84, avg_monthly_inflow: 240000, monthly_txn_count: 180, txn_bounce_rate: 1,
+            digital_adoption_ratio: 82, inflow_growth_rate_6m: 9, inflow_volatility_cv: 11,
+            gst_registered: true, gst_filing_regularity: 96, overdue_invoice_ratio: 5,
+            utility_ontime_ratio: 98, rent_ontime_ratio: 97,
+            supplier_concentration_hhi: 18, repeat_supplier_ratio: 80,
+            existing_loan_count: 0, existing_monthly_emi: 0,
+            bureau_score_available: true, bureau_score_raw: 740,
+            monthly_expenses: 150000, requested_loan_amount: 300000, requested_tenure_months: 36
+        },
+        thin: {
+            entity_type: 'Individual', business_type: 'Daily Wage Worker', geography_tier: 'Rural',
+            vintage_months: 9, avg_monthly_inflow: 14000, monthly_txn_count: 6, txn_bounce_rate: 9,
+            digital_adoption_ratio: 12, inflow_growth_rate_6m: -2, inflow_volatility_cv: 46,
+            gst_registered: false, utility_ontime_ratio: 76, rent_ontime_ratio: 80,
+            existing_loan_count: 0, existing_monthly_emi: 0,
+            bureau_score_available: false,
+            monthly_expenses: 11000, requested_loan_amount: 40000, requested_tenure_months: 24
+        },
+        overleveraged: {
+            entity_type: 'Small Business', business_type: 'Transport & Logistics', geography_tier: 'Tier 1',
+            vintage_months: 52, avg_monthly_inflow: 190000, monthly_txn_count: 90, txn_bounce_rate: 6,
+            digital_adoption_ratio: 72, inflow_growth_rate_6m: 2, inflow_volatility_cv: 27,
+            gst_registered: true, gst_filing_regularity: 88, overdue_invoice_ratio: 22,
+            utility_ontime_ratio: 90, rent_ontime_ratio: 88,
+            supplier_concentration_hhi: 55, repeat_supplier_ratio: 60,
+            existing_loan_count: 3, existing_monthly_emi: 42000,
+            bureau_score_available: true, bureau_score_raw: 640,
+            monthly_expenses: 150000, requested_loan_amount: 900000, requested_tenure_months: 12
+        }
+    };
+
+    function populateBusinessTypes(preferred) {
+        const entityType = document.getElementById('entity_type').value;
+        const select = document.getElementById('business_type');
+        const want = preferred || formBusinessType;
+        select.innerHTML = '';
+        (businessTypeChoices[entityType] || []).forEach(bt => {
+            const opt = document.createElement('option');
+            opt.value = bt; opt.textContent = bt;
+            if (bt === want) opt.selected = true;
+            select.appendChild(opt);
+        });
+    }
+
+    function onEntityTypeChange(preferred) {
+        populateBusinessTypes(preferred);
+        const isBusiness = document.getElementById('entity_type').value === 'Small Business';
+        document.getElementById('business-only-1').style.display = isBusiness ? '' : 'none';
+        document.getElementById('business-only-2').style.display = isBusiness ? '' : 'none';
+    }
+
+    function toggleGst() {
+        document.getElementById('gst-fields')
+            .classList.toggle('is-disabled', !document.getElementById('gst_registered').checked);
+    }
+    function toggleBureau() {
+        document.getElementById('bureau-fields')
+            .classList.toggle('is-disabled', !document.getElementById('bureau_score_available').checked);
+    }
+
+    function loadPreset(name) {
+        const p = PRESETS[name];
+        if (!p) return;
+        Object.entries(p).forEach(([key, value]) => {
+            const el = document.getElementById(key);
+            if (!el) return;
+            if (el.type === 'checkbox') el.checked = Boolean(value);
+            else el.value = value;
+        });
+        onEntityTypeChange(p.business_type);
+        toggleGst(); toggleBureau();
+        document.getElementById('assessForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function simulateAA() {
+        const btn = document.getElementById('btnAAConnect');
+        const progress = document.getElementById('aa-progress');
+        const bar = document.getElementById('aa-bar');
+        const status = document.getElementById('aa-status');
+        
+        btn.disabled = true;
+        progress.style.display = 'block';
+        
+        let step = 0;
+        const steps = [
+            { msg: "Connecting to Sahamati AA...", width: 10 },
+            { msg: "Authenticating with HDFC Bank (FIP)...", width: 30 },
+            { msg: "Extracting GST invoices from GSTN...", width: 60 },
+            { msg: "Verifying Utility Bill payments...", width: 85 },
+            { msg: "Data fetched successfully!", width: 100 }
+        ];
+
+        const interval = setInterval(() => {
+            if (step >= steps.length) {
+                clearInterval(interval);
+                setTimeout(() => {
+                    progress.style.display = 'none';
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check"></i> Data Fetched';
+                    btn.style.background = 'var(--good)';
+                    loadPreset('strong');
+                }, 1000);
+                return;
+            }
+            status.textContent = steps[step].msg;
+            bar.style.width = steps[step].width + '%';
+            step++;
+        }, 800);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        onEntityTypeChange();
+        toggleGst();
+        toggleBureau();
+        const card = document.getElementById('resultCard');
+        if (card && window.innerWidth < 1024) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+</script>
+{% endblock %}

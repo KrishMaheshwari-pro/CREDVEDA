@@ -1,56 +1,94 @@
-# database_setup.py
+# database.py
 import sqlite3
 import config
 
+
 def create_database():
     """Initializes the database and creates/updates tables."""
+    conn = None
     try:
         conn = sqlite3.connect(config.DB_NAME)
         cursor = conn.cursor()
         print(f"Successfully connected to database: {config.DB_NAME}")
 
-        # --- Drop existing tables to ensure schema is updated ---
-        # In a real production environment, you would use a migration tool.
-        # For this hackathon, dropping and recreating is the simplest way.
-        cursor.execute("DROP TABLE IF EXISTS historical_features")
         cursor.execute("DROP TABLE IF EXISTS credit_scores")
-        print("Dropped old tables (if they existed).")
+        print("Dropped old 'credit_scores' table (if it existed).")
 
-
-        # --- Create historical_features table with new NLP columns ---
-        event_columns = " ".join([f"{key} INTEGER," for key in config.EVENT_KEYWORDS.keys()])
-        create_features_table_sql = f"""
-        CREATE TABLE historical_features (
-            Date TEXT, Ticker TEXT, Open REAL, High REAL, Low REAL, Close REAL,
-            Volume REAL, Return REAL, Volatility REAL, SMA_Short REAL, SMA_Long REAL,
-            TrendRatio REAL, RSI REAL, MACD REAL, Liquidity REAL, PE REAL, PB REAL,
-            PEG REAL, DebtToEquity REAL, MarketCap REAL, Beta REAL, ProfitMargin REAL,
-            MacroIndicator REAL, NewsSentiment REAL, TranscriptSentiment REAL,
-            {event_columns}
-            PRIMARY KEY (Date, Ticker)
-        )
-        """
-        cursor.execute(create_features_table_sql)
-        print("Table 'historical_features' created with new NLP schema.")
-
-        # --- Create credit_scores table with a column for trigger events ---
+        # 'applicants' is created/replaced by data_ingestion.py (pandas to_sql),
+        # this just guarantees the users table (auth) and scores table exist.
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS credit_scores (
-            Date TEXT, Ticker TEXT, CreditScore REAL, TopReasons TEXT,
-            TriggerEvent TEXT,  -- This new column will store the event snippet
-            PRIMARY KEY (Date, Ticker)
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT NOT NULL
         )
         """)
-        print("Table 'credit_scores' created with TriggerEvent column.")
+
+        cursor.execute("""
+        CREATE TABLE credit_scores (
+            applicant_id TEXT PRIMARY KEY,
+            credit_score REAL,
+            probability_good REAL,
+            confidence_label TEXT,
+            band_low REAL,
+            band_high REAL,
+            data_completeness REAL,
+            reason_codes TEXT,
+            guardrail_flags TEXT,
+            improvement_path TEXT,
+            shap_factors TEXT,
+            scored_at TEXT
+        )
+        """)
+        print("Table 'credit_scores' created.")
+
+        # --- Loan lifecycle ---------------------------------------------
+        # What happens after a score becomes a decision: disbursal, an EMI
+        # schedule, and the repayment behaviour that flows back into the
+        # borrower's next assessment.
+        cursor.execute("DROP TABLE IF EXISTS loans")
+        cursor.execute("DROP TABLE IF EXISTS repayments")
+
+        cursor.execute("""
+        CREATE TABLE loans (
+            loan_id TEXT PRIMARY KEY,
+            applicant_id TEXT NOT NULL,
+            principal REAL,
+            tenure_months INTEGER,
+            annual_rate REAL,
+            monthly_emi REAL,
+            status TEXT,
+            months_elapsed INTEGER DEFAULT 0,
+            -- the assessment as it stood at funding time, frozen so the
+            -- portfolio backtest can compare prediction against outcome
+            score_at_funding INTEGER,
+            prob_good_at_funding REAL,
+            disbursed_at TEXT,
+            closed_at TEXT
+        )
+        """)
+        print("Table 'loans' created.")
+
+        cursor.execute("""
+        CREATE TABLE repayments (
+            loan_id TEXT NOT NULL,
+            instalment_no INTEGER NOT NULL,
+            amount_due REAL,
+            status TEXT,
+            due_month INTEGER,
+            paid_at TEXT,
+            PRIMARY KEY (loan_id, instalment_no)
+        )
+        """)
+        print("Table 'repayments' created.")
 
         conn.commit()
         print("Database setup complete.")
-
     except sqlite3.Error as e:
         print(f"Database error: {e}")
     finally:
         if conn:
             conn.close()
+
 
 if __name__ == "__main__":
     create_database()

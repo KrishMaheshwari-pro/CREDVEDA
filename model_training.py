@@ -1,149 +1,168 @@
+"""
+Trains and compares the candidate scoring models, then saves the production
+model plus everything the app needs to explain and audit it.
+
+Three candidates are compared on the metrics credit-risk teams actually
+report -- Gini and the KS statistic, not just accuracy -- along with Brier
+score, which measures whether the predicted probabilities are *calibrated*
+rather than merely well-ranked. A model can rank applicants perfectly and
+still be badly calibrated, and for lending the calibration is what lets you
+price risk.
+
+Production model selection is deliberately NOT "whichever scores highest".
+PS #4 requires an explanation for every individual decision, and the Random
+Forest is the candidate that supports an exact additive decomposition of a
+single prediction (see scoring.forest_explain). A model that wins by a
+fraction of a point of AUC but can only offer approximate explanations is
+the wrong trade for this problem, and that choice is recorded below rather
+than hidden.
+
+Protected attributes (gender, geography, business type) are excluded from
+the feature set entirely -- they exist only for the fairness audit.
+
+# Updated on 2026-02-18
+"""
 import sqlite3
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split, GridSearchCV # NEW: Import GridSearchCV
-from sklearn.metrics import classification_report, roc_auc_score # NEW: Import more metrics
+
 import joblib
+import numpy as np
+import pandas as pd
+from sklearn.calibration import calibration_curve
+from sklearn.ensemble import HistGradientBoostingClassifier, IsolationForest, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import brier_score_loss, classification_report, roc_auc_score, roc_curve
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
 import config
-import sys
+
+MODEL_FILENAME = "model.joblib"
+SCALER_FILENAME = "scaler.joblib"
+FEATURES_FILENAME = "feature_cols.joblib"
+IMPUTE_FILENAME = "impute_medians.joblib"
+PERCENTILES_FILENAME = "feature_percentiles.joblib"
+ANOMALY_FILENAME = "anomaly_model.joblib"
+LEADERBOARD_FILENAME = "model_leaderboard.joblib"
+
+# The production model must support exact per-prediction decomposition.
+EXPLAINABLE_MODEL = "Random Forest"
+
+
+def ks_statistic(y_true, y_prob) -> float:
+    """Kolmogorov-Smirnov separation: the widest gap between the cumulative
+    distributions of good and bad borrowers. The standard scorecard measure
+    of how cleanly a model splits the two populations."""
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    return float(np.max(tpr - fpr))
+
+
+def candidate_models():
+    return {
+        "Random Forest": RandomForestClassifier(
+            n_estimators=160, max_depth=10, min_samples_split=6, min_samples_leaf=3,
+            random_state=config.RANDOM_SEED, n_jobs=-1, class_weight="balanced",
+        ),
+        "Gradient Boosting": HistGradientBoostingClassifier(
+            max_iter=220, max_depth=6, learning_rate=0.06,
+            random_state=config.RANDOM_SEED,
+        ),
+        "Logistic Regression": LogisticRegression(
+            max_iter=2000, class_weight="balanced", random_state=config.RANDOM_SEED,
+        ),
+    }
+
 
 def train_model():
-    """Loads data, trains the specified model, and saves it."""
-    if len(sys.argv) < 2 or sys.argv[1].lower() not in ['rf', 'xgb']:
-        print("Usage: python model_training.py [rf|xgb]")
-        print("  rf: RandomForest")
-        print("  xgb: XGBoost")
-        return
-    
-    model_choice = sys.argv[1].lower()
-    print(f"--- Starting training for {model_choice.upper()} model ---")
-
+    print("Loading applicants from database...")
+    conn = sqlite3.connect(config.DB_NAME)
     try:
-        conn = sqlite3.connect(config.DB_NAME)
-        df = pd.read_sql_query("SELECT * FROM historical_features", conn, index_col=['Date', 'Ticker'], parse_dates=['Date'])
-        print(f"Loaded {len(df)} rows from the database.")
-    except Exception as e:
-        print(f"Could not load data from database: {e}")
-        return
+        df = pd.read_sql_query("SELECT * FROM applicants", conn)
     finally:
-        if conn:
-            conn.close()
+        conn.close()
+    print(f"Loaded {len(df)} applicant rows.")
 
-    # --- Create the Predictive Target ---
-    df['Future_Close'] = df.groupby(level='Ticker')['Close'].shift(-config.PREDICTION_HORIZON_DAYS)
-    df['Future_Return'] = (df['Future_Close'] / df['Close']) - 1.0
-    df['Target'] = (df['Future_Return'] > 0).astype(int) # Target: 1 if future return > 0, else 0
-    df.dropna(subset=['Target'], inplace=True)
-
-    # --- Feature Selection and Imputation ---
-    feature_cols = [col for col in config.FEATURE_COLS if col in df.columns]
+    feature_cols = config.FEATURE_COLS
     X = df[feature_cols].copy()
-    y = df['Target']
+    y = df["repayment_outcome"]
 
-    # Impute missing numerical values with median
+    impute_medians = {}
     for col in X.columns:
-        if X[col].dtype.kind in 'biufc' and X[col].isnull().any():
-            median_val = X[col].median()
-            X[col].fillna(median_val, inplace=True)
-    # Impute any remaining NaNs (e.g., from new columns that might appear) with 0
-    X.fillna(0, inplace=True)
+        med = X[col].median()
+        impute_medians[col] = float(med) if not np.isnan(med) else 0.0
+        X[col] = X[col].fillna(impute_medians[col])
 
-    # --- Scale Features and Split Data ---
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     X_train, X_test, y_train, y_test = train_test_split(
-        X_scaled, y, test_size=0.2, random_state=42, stratify=y # stratify ensures balanced splits
+        X_scaled, y, test_size=0.2, random_state=config.RANDOM_SEED, stratify=y
     )
-    
-    # --- Handle Class Imbalance for XGBoost ---
-    # Calculate scale_pos_weight: sum(negative instances) / sum(positive instances)
-    # This gives more weight to the minority class (Target=1, assuming positive returns are rarer)
-    neg_count = y_train.value_counts()[0] if 0 in y_train.value_counts() else 0
-    pos_count = y_train.value_counts()[1] if 1 in y_train.value_counts() else 0
-    
-    scale_pos_weight_val = neg_count / pos_count if pos_count > 0 else 1
-    print(f"Calculated scale_pos_weight: {scale_pos_weight_val:.2f}")
+    print(f"Training on {len(X_train)} samples ({y_train.mean():.1%} positive), "
+          f"holding out {len(X_test)}.\n")
 
-    # --- Select and train the chosen model ---
-    if model_choice == 'rf':
-        print(f"Training RandomForestClassifier on {len(X_train)} samples...")
-        model = RandomForestClassifier(
-            n_estimators=200, 
-            max_depth=10, 
-            min_samples_split=5,
-            min_samples_leaf=3, 
-            random_state=42, 
-            n_jobs=-1, 
-            class_weight='balanced' # RandomForest has a direct 'balanced' option
-        )
-    elif model_choice == 'xgb':
-        print(f"Training XGBClassifier on {len(X_train)} samples...")
-        # Refined XGBoost hyperparameters for better performance
-        model = XGBClassifier(
-            n_estimators=500,        # Increased estimators
-            max_depth=7,             # Slightly deeper trees
-            learning_rate=0.05,      # Smaller learning rate
-            subsample=0.7,           # Use 70% of data for each tree
-            colsample_bytree=0.7,    # Use 70% of features for each tree
-            gamma=0.1,               # Minimum loss reduction for a split
-            use_label_encoder=False, # Suppress warning
-            eval_metric='logloss',   # Metric for evaluation during training
-            random_state=42, 
-            n_jobs=-1,
-            scale_pos_weight=scale_pos_weight_val # Apply class imbalance handling
-        )
-        # --- Optional: Hyperparameter Tuning with GridSearchCV (for more rigorous optimization) ---
-        # For a hackathon, the fixed parameters above are a good start.
-        # For production, uncomment and run this for optimal tuning.
-        # param_grid = {
-        #     'n_estimators': [300, 500, 700],
-        #     'max_depth': [5, 7, 9],
-        #     'learning_rate': [0.01, 0.05, 0.1],
-        #     'subsample': [0.6, 0.8, 1.0],
-        #     'colsample_bytree': [0.6, 0.8, 1.0],
-        #     'gamma': [0, 0.1, 0.2],
-        #     'scale_pos_weight': [scale_pos_weight_val] # Keep this fixed if imbalance is significant
-        # }
-        # grid_search = GridSearchCV(
-        #     estimator=XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42, n_jobs=-1),
-        #     param_grid=param_grid,
-        #     scoring='roc_auc', # Use ROC-AUC for imbalanced data
-        #     cv=3,              # 3-fold cross-validation
-        #     verbose=2,
-        #     n_jobs=-1
-        # )
-        # grid_search.fit(X_train, y_train)
-        # model = grid_search.best_estimator_
-        # print(f"Best XGBoost parameters found: {grid_search.best_params_}")
-        # print(f"Best ROC-AUC score on training set: {grid_search.best_score_:.2f}")
-        
-    model.fit(X_train, y_train)
-    
-    # --- Evaluate Model Performance ---
-    y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)[:, 1] # Probability of the positive class
+    leaderboard, trained = [], {}
+    for name, model in candidate_models().items():
+        model.fit(X_train, y_train)
+        proba = model.predict_proba(X_test)[:, 1]
+        auc = roc_auc_score(y_test, proba)
+        entry = {
+            "name": name,
+            "roc_auc": round(float(auc), 4),
+            "gini": round(float(2 * auc - 1), 4),
+            "ks": round(ks_statistic(y_test, proba), 4),
+            "brier": round(float(brier_score_loss(y_test, proba)), 4),
+            "accuracy": round(float(model.score(X_test, y_test)), 4),
+            "explainable": name == EXPLAINABLE_MODEL,
+        }
+        leaderboard.append(entry)
+        trained[name] = model
+        print(f"  {name:<22} AUC {entry['roc_auc']:.3f} | Gini {entry['gini']:.3f} | "
+              f"KS {entry['ks']:.3f} | Brier {entry['brier']:.3f}")
 
-    accuracy = model.score(X_test, y_test)
-    roc_auc = roc_auc_score(y_test, y_pred_proba)
-    
-    print(f"\n--- Model Evaluation for {model_choice.upper()} ---")
-    print(f"Test Accuracy: {accuracy:.2%}")
-    print(f"ROC-AUC Score: {roc_auc:.2f}")
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred))
+    leaderboard.sort(key=lambda e: e["roc_auc"], reverse=True)
+    best_by_auc = leaderboard[0]["name"]
+    for entry in leaderboard:
+        entry["best_by_auc"] = entry["name"] == best_by_auc
+        entry["in_production"] = entry["name"] == EXPLAINABLE_MODEL
 
-    # --- Save model with a specific name ---
-    model_filename = f'model_{model_choice}.joblib'
-    scaler_filename = f'scaler_{model_choice}.joblib'
-    features_filename = f'feature_cols_{model_choice}.joblib'
-    
-    joblib.dump(model, model_filename)
-    joblib.dump(scaler, scaler_filename)
-    joblib.dump(feature_cols, features_filename)
-    print(f"\nModel saved as {model_filename}, scaler as {scaler_filename}, and features as {features_filename}.")
+    model = trained[EXPLAINABLE_MODEL]
+    print(f"\nHighest AUC: {best_by_auc}")
+    print(f"In production: {EXPLAINABLE_MODEL} "
+          f"({'also the highest' if best_by_auc == EXPLAINABLE_MODEL else 'chosen for exact explainability'})")
+
+    proba = model.predict_proba(X_test)[:, 1]
+    print("\n--- Production model on held-out data ---")
+    print(classification_report(y_test, model.predict(X_test)))
+
+    # Calibration: does a predicted 70% actually repay 70% of the time?
+    frac_pos, mean_pred = calibration_curve(y_test, proba, n_bins=8, strategy="quantile")
+    calibration = [{"predicted": round(float(p), 4), "actual": round(float(a), 4)}
+                   for p, a in zip(mean_pred, frac_pos)]
+
+    # Unsupervised data-consistency screen, trained on the same feature space.
+    print("Training data-consistency (anomaly) screen...")
+    anomaly_model = IsolationForest(
+        contamination=config.ANOMALY_CONTAMINATION,
+        random_state=config.RANDOM_SEED, n_estimators=150,
+    ).fit(X_scaled)
+    flagged = int((anomaly_model.predict(X_scaled) == -1).sum())
+    print(f"  flags {flagged} of {len(X_scaled)} applications ({flagged / len(X_scaled):.1%}) for manual review")
+
+    percentiles = {
+        col: {int(p * 100): float(X[col].quantile(p)) for p in (0.10, 0.20, 0.50, 0.80, 0.90)}
+        for col in feature_cols
+    }
+
+    joblib.dump(model, MODEL_FILENAME)
+    joblib.dump(scaler, SCALER_FILENAME)
+    joblib.dump(feature_cols, FEATURES_FILENAME)
+    joblib.dump(impute_medians, IMPUTE_FILENAME)
+    joblib.dump(percentiles, PERCENTILES_FILENAME)
+    joblib.dump(anomaly_model, ANOMALY_FILENAME)
+    joblib.dump({"leaderboard": leaderboard, "calibration": calibration,
+                 "production_model": EXPLAINABLE_MODEL, "n_train": len(X_train),
+                 "n_test": len(X_test)}, LEADERBOARD_FILENAME)
+    print(f"\nSaved model, scaler, features, imputation, percentiles, anomaly screen and leaderboard.")
+
 
 if __name__ == "__main__":
     train_model()

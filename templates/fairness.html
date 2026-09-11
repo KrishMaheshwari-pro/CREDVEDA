@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Fairness Report — CredVeda{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+{% block content %}
+<div class="container">
+
+    <div class="mb-3">
+        <h1 class="mb-1">Fairness &amp; responsible AI</h1>
+        <p class="muted mb-0" style="max-width:76ch">
+            Gender, geography and business type are <strong>never inputs to the model</strong> — they're withheld
+            entirely, then used here to audit the outcomes after the fact. We apply the four-fifths rule: a group's
+            approval rate should be at least {{ (threshold*100)|round(0)|int }}% of the highest group's. Anything
+            below that is flagged rather than averaged away.
+        </p>
+    </div>
+
+    <div class="grid grid-3 mb-3">
+        <div class="stat">
+            <p class="stat-label">Population audited</p>
+            <p class="stat-value">{{ '{:,}'.format(report.n_applicants) }}</p>
+            <p class="stat-foot">every scored applicant</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Groups flagged</p>
+            <p class="stat-value" style="color:var({{ '--bad' if report.flagged_disparities else '--good' }})">
+                {{ report.flagged_disparities|length }}</p>
+            <p class="stat-foot">under the four-fifths rule</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">Protected attributes used</p>
+            <p class="stat-value" style="color:var(--good)">0</p>
+            <p class="stat-foot">of {{ report.groups|length }} audited, none are model inputs</p>
+        </div>
+    </div>
+
+    {% if report.flagged_disparities %}
+    <div class="card mb-3" style="border-left:3px solid var(--bad)">
+        <p class="card-title" style="color:var(--bad)">
+            <i class="fas fa-triangle-exclamation"></i> Where the model is systematically harsher
+        </p>
+        <ul style="margin:0 0 14px;padding-left:20px">
+            {% for line in report.flagged_disparities %}
+            <li class="muted" style="margin-bottom:6px;font-size:.875rem">{{ line }}</li>
+            {% endfor %}
+        </ul>
+        <div class="alert alert-info" style="margin:0">
+            <span class="alert-icon"><i class="fas fa-circle-info"></i></span>
+            <div class="alert-body">
+                <p class="alert-title">How to read this</p>
+                <p class="alert-text">A flag is not automatically unlawful bias. Much of this traces to genuinely
+                thinner data footprints (rural applicants) and genuinely more volatile cash flows (agri-allied,
+                daily-wage work). It <em>does</em> mean these groups need human review of the approval policy —
+                and where the gap comes from data sparsity rather than behaviour, the thin-file confidence band
+                should be driving the decision, not a hard score cut-off.</p>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-ok mb-3">
+        <span class="alert-icon"><i class="fas fa-circle-check"></i></span>
+        <div class="alert-body">
+            <p class="alert-title">No group failed the four-fifths rule</p>
+            <p class="alert-text">Every audited group's approval rate is within {{ (threshold*100)|round(0)|int }}% of the highest.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    {% for group_col, rows in report.groups.items() %}
+    {% set flagged_here = rows | selectattr('flagged') | list %}
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0">By {{ group_col.replace('_', ' ')|title }}</p>
+                <p class="card-sub">{{ rows|length }} groups compared</p>
+            </div>
+            {% if flagged_here %}
+                <span class="chip chip-bad">{{ flagged_here|length }} flagged</span>
+            {% else %}
+                <span class="chip chip-good"><i class="fas fa-check"></i> Within tolerance</span>
+            {% endif %}
+        </div>
+
+        <div class="grid grid-side">
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Group</th><th>N</th><th>Avg score</th>
+                            <th>Approval</th><th>Thin file</th><th>vs. best</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr class="{{ 'row-flagged' if r.flagged }}">
+                            <td class="strong">{{ r.group }}</td>
+                            <td>{{ r.n }}</td>
+                            <td>{{ r.avg_score }}</td>
+                            <td class="strong">{{ (r.approval_rate * 100)|round(1) }}%</td>
+                            <td>{{ (r.thin_file_rate * 100)|round(1) }}%</td>
+                            <td>
+                                {% if r.flagged %}
+                                <span class="chip chip-bad">{{ (r.adverse_impact_ratio * 100)|round(0)|int }}%</span>
+                                {% else %}
+                                <span class="chip chip-good">{{ (r.adverse_impact_ratio * 100)|round(0)|int }}%</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="chart-box">
+                <canvas id="chart-{{ group_col }}" height="{{ 60 + rows|length * 26 }}"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const report = {{ report|tojson }};
+    const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+    Object.keys(report.groups).forEach(groupCol => {
+        const rows = report.groups[groupCol];
+        new Chart(document.getElementById('chart-' + groupCol), {
+            type: 'bar',
+            data: {
+                labels: rows.map(r => r.group),
+                datasets: [{
+                    data: rows.map(r => +(r.approval_rate * 100).toFixed(1)),
+                    backgroundColor: rows.map(r => r.flagged ? 'rgba(239,68,68,.75)' : 'rgba(34,197,94,.7)'),
+                    borderRadius: 4,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: c => c.parsed.x + '% approved' } }
+                },
+                scales: {
+                    x: { beginAtZero: true, max: 100,
+                         ticks: { color: css('--text-faint'), font: { size: 11 }, callback: v => v + '%' },
+                         grid: { color: css('--border-soft') } },
+                    y: { ticks: { color: css('--text-dim'), font: { size: 11 } }, grid: { display: false } }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}
