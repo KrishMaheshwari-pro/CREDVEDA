@@ -174,12 +174,15 @@ def main():
     conn.commit()
     conn.close()
 
+    lenders = [u for u, _, role in DEMO_USERS if role == "lender"]
     print("Seeded demo data:")
     print("  Bank login:   bank_demo / demo1234")
-    print("  Lenders:      lender_ramesh, lender_priya, lender_acme  (all / demo1234)")
+    print(f"  Lenders ({len(lenders)}):  {', '.join(lenders)}  (all / demo1234)")
     print("  Borrower passports (public):")
     for l in LISTINGS:
-        print(f"    /passport/{l['applicant_id']}   ({l['business_type']}, score {l['score']})")
+        n = len(l["commitments"])
+        print(f"    /passport/{l['applicant_id']}   ({l['business_type']}, score {l['score']}, "
+              f"{n} lender piece{'s' if n != 1 else ''})")
 
 
 if __name__ == "__main__":

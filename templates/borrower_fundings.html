@@ -208,7 +208,7 @@
                 </button>
             {% else %}
                 <div style="display:flex;gap:.6rem;">
-                    <button onclick="confirmAccept('{{ o.type }}', {{ o.name|tojson }}, '{{ o.rate }}', {{ (o.funding or {})|tojson }})"
+                    <button onclick="confirmAccept('{{ o.type }}', '{{ o.name }}', '{{ o.rate }}')"
                             style="flex:1;padding:.65rem;border-radius:9px;border:none;background:#22c55e;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;">
                         <i class="fas fa-check"></i> Accept
                     </button>
@@ -253,14 +253,26 @@
     </div>
 </div>
 
+{# Funding data for the dialog. It lives in a JSON script block rather than in
+   the button's onclick: tojson does not escape double quotes, so inlining it
+   in a double-quoted attribute closes the attribute early and silently breaks
+   the Accept button. Inside a script block the escaping is safe. #}
+{% set fmap = {} %}
+{% for o in offers %}{% set _ = fmap.update({o.type: o.funding}) %}{% endfor %}
+<script id="offerFunding" type="application/json">{{ fmap | tojson }}</script>
+
 <script>
     const ACTION_URL = "{{ url_for('borrower_offer_action', applicant_id=applicant_id) }}";
+    let OFFER_FUNDING = {};
+    try { OFFER_FUNDING = JSON.parse(document.getElementById('offerFunding').textContent) || {}; }
+    catch (e) { OFFER_FUNDING = {}; }
     function openModal() { document.getElementById('confirmModal').style.display = 'flex'; }
     function closeModal() { document.getElementById('confirmModal').style.display = 'none'; }
 
     const rupee = n => '₹' + Math.round(n).toLocaleString('en-IN');
 
-    function confirmAccept(type, name, rate, funding) {
+    function confirmAccept(type, name, rate) {
+        const funding = OFFER_FUNDING[type] || null;
         document.getElementById('modalForm').action = ACTION_URL;
         document.getElementById('modalAction').value = 'accept';
         document.getElementById('modalOption').value = type;
