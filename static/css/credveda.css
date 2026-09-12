@@ -515,13 +515,13 @@ table.table td.strong { color: var(--text); font-weight: 600; }
     line-height: 1.2;
     text-align: center;
     text-decoration: none;
-    color: var(--text-dim);
-    background: transparent;
-    border: 1px solid transparent;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
     border-radius: 8px;
     transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.portal-tab:hover        { color: var(--text); background: var(--surface-2); text-decoration: none; }
+.portal-tab:hover        { color: var(--text); background: var(--surface-2); border-color: var(--text-dim); text-decoration: none; }
 .portal-tab i            { font-size: .8rem; }
 .portal-tab.is-active    { color: #fff; font-weight: 700; }
 .portal-tab.is-active:hover { color: #fff; }
