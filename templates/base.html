@@ -49,6 +49,12 @@
                     class="{{ 'active' if request.endpoint == 'apply_page' }}">Assess</a>
                 <a href="{{ url_for('marketplace') }}"
                     class="{{ 'active' if request.endpoint in ['marketplace','marketplace_listing_detail'] }}">Marketplace</a>
+                <a href="{{ url_for('bank_proposals') }}"
+                    class="{{ 'active' if request.endpoint == 'bank_proposals' }}"
+                    style="position:relative">
+                    Proposals
+                    {# Badge showing pending count — only visible when on this nav item #}
+                </a>
 
                 <!-- Tools dropdown -->
                 <div style="position:relative; display:inline-block;" onmouseleave="this.querySelector('.ddmenu').style.display='none'">
@@ -66,7 +72,7 @@
                       <i class="fas fa-file-invoice-dollar" style="width:14px;color:var(--accent);"></i> Parse Statement
                     </a>
                     <a href="{{ url_for('lender_ops') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
-                      <i class="fas fa-list-check" style="width:14px;color:var(--accent);"></i> Ops Queue
+                      <i class="fas fa-list-check" style="width:14px;color:var(--accent);"></i> Verify Queue
                     </a>
                   </div>
                 </div>

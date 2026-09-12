@@ -78,12 +78,20 @@
                 </div>
                 <div class="grid grid-2" style="gap:0 16px">
                     <div class="field">
-                        <label class="label">Avg monthly digital inflow</label>
+                        <label class="label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <span>Monthly income / inflow <span class="hint">· all sources incl. cash</span></span>
+                            <select name="src_income" class="src-select" title="How was this figure obtained?">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_income','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated"     {{ 'selected' if form_values.get('src_income')=='estimated' }}>🟡 Estimated (GST/proxy)</option>
+                                <option value="verified"      {{ 'selected' if form_values.get('src_income')=='verified' }}>🟢 Verified (statement)</option>
+                            </select>
+                        </label>
                         <div class="input-group">
                             <input type="number" name="avg_monthly_inflow" id="avg_monthly_inflow" class="input" min="0"
                                 value="{{ form_values.avg_monthly_inflow or 90000 }}">
                             <span class="input-suffix">₹</span>
                         </div>
+                        <p class="help">Cash-heavy businesses: enter total income — tag as Estimated if cash component is significant.</p>
                     </div>
                     <div class="field">
                         <label class="label">Monthly transactions</label>
@@ -136,7 +144,14 @@
                 </div>
                 <div class="grid grid-2" style="gap:0 16px" id="gst-fields">
                     <div class="field">
-                        <label class="label">Returns filed on time</label>
+                        <label class="label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <span>Returns filed on time</span>
+                            <select name="src_gst" class="src-select" title="How was this figure obtained?">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_gst','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated"     {{ 'selected' if form_values.get('src_gst')=='estimated' }}>🟡 Estimated</option>
+                                <option value="verified"      {{ 'selected' if form_values.get('src_gst')=='verified' }}>🟢 GST Portal</option>
+                            </select>
+                        </label>
                         <div class="input-group">
                             <input type="number" name="gst_filing_regularity" id="gst_filing_regularity" class="input"
                                 min="0" max="100" value="{{ form_values.gst_filing_regularity or 85 }}">
@@ -160,7 +175,14 @@
                 </div>
                 <div class="grid grid-2" style="gap:0 16px">
                     <div class="field">
-                        <label class="label">Utility bills paid on time</label>
+                        <label class="label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <span>Utility bills paid on time</span>
+                            <select name="src_utility" class="src-select" title="How was this figure obtained?">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_utility','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated"     {{ 'selected' if form_values.get('src_utility')=='estimated' }}>🟡 Estimated</option>
+                                <option value="verified"      {{ 'selected' if form_values.get('src_utility')=='verified' }}>🟢 Utility Bill</option>
+                            </select>
+                        </label>
                         <div class="input-group">
                             <input type="number" name="utility_ontime_ratio" id="utility_ontime_ratio" class="input"
                                 min="0" max="100" value="{{ form_values.utility_ontime_ratio or 88 }}">
@@ -214,7 +236,14 @@
                             value="{{ form_values.existing_loan_count or 0 }}">
                     </div>
                     <div class="field">
-                        <label class="label">Existing EMI</label>
+                        <label class="label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <span>Existing EMI</span>
+                            <select name="src_emi" class="src-select" title="How was this figure obtained?">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_emi','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated"     {{ 'selected' if form_values.get('src_emi')=='estimated' }}>🟡 Estimated</option>
+                                <option value="verified"      {{ 'selected' if form_values.get('src_emi')=='verified' }}>🟢 Bank Statement</option>
+                            </select>
+                        </label>
                         <div class="input-group">
                             <input type="number" name="existing_monthly_emi" id="existing_monthly_emi" class="input"
                                 min="0" value="{{ form_values.existing_monthly_emi or 0 }}">
@@ -370,6 +399,59 @@
                 </div>
             </div>
 
+            <!-- ===== DATA VERIFICATION INDEX ===== -->
+            {% set dvi = result.dvi %}
+            {% if dvi is not none %}
+            {% set dvi_color = 'good' if dvi >= 80 else ('warn' if dvi >= 60 else ('bad' if dvi < 40 else 'warn')) %}
+            <div class="card mb-3" style="border:1px solid var(--{{ dvi_color }})33">
+                <div class="card-head" style="margin-bottom:.6rem">
+                    <p class="card-title mb-0">
+                        <i class="fas fa-shield-halved" style="color:var(--{{ dvi_color }})"></i>
+                        Data Verification Index
+                    </p>
+                    <span class="chip {% if dvi >= 80 %}chip-good{% elif dvi >= 60 %}chip-warn{% else %}chip-bad{% endif %}">
+                        {{ dvi }}/100
+                    </span>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:.75rem">
+                    <div class="dvi-bar-bg">
+                        <div class="dvi-bar-fill" style="width:{{ dvi }}%;background:var(--{{ dvi_color }})"></div>
+                    </div>
+                    <span style="font-size:.85rem;font-weight:700;color:var(--{{ dvi_color }});white-space:nowrap">
+                        {% if dvi >= 80 %}High trust{% elif dvi >= 60 %}Moderate{% elif dvi >= 40 %}Low{% else %}Very low{% endif %}
+                    </span>
+                </div>
+
+                {% if result.dvi_penalty > 0 %}
+                <div class="alert alert-warn" style="margin:0 0 .6rem;padding:.5rem .75rem">
+                    <span class="alert-icon" style="font-size:.9rem"><i class="fas fa-sliders"></i></span>
+                    <div class="alert-body">
+                        <p class="alert-text" style="margin:0">
+                            Conservative adjustment applied: <strong>−{{ result.dvi_penalty }} pts</strong>
+                            (declared score {{ result.credit_score }} → effective score {{ result.adjusted_score }}).
+                            Link verified data sources to remove this adjustment.
+                        </p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;font-size:.8rem">
+                    {% set src_map = result.field_sources %}
+                    {% for lbl, key in [('Income/Inflow','src_income'),('Existing Debt','src_emi'),('GST Data','src_gst'),('Utility Bills','src_utility')] %}
+                    {% set s = src_map.get(key, 'self_declared') %}
+                    <div style="display:flex;align-items:center;gap:5px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-soft)">
+                        <span>{% if s == 'verified' %}🟢{% elif s == 'estimated' %}🟡{% else %}🔴{% endif %}</span>
+                        <span style="color:var(--text-dim)">{{ lbl }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="help mt-2 mb-0">
+                    🟢 Verified = document / API &nbsp;·&nbsp; 🟡 Estimated = proxy signals &nbsp;·&nbsp; 🔴 Self-declared = borrower stated
+                </p>
+            </div>
+            {% endif %}
+
             <div class="card mb-3">
                 <p class="card-title">Why this score</p>
                 {% for r in result.reason_codes %}
@@ -437,7 +519,7 @@
                     <i class="fas fa-store" style="color:var(--good);font-size:1.1rem;margin-top:2px"></i>
                     <div>
                         <p class="card-title mb-0" style="color:var(--good)">Eligible for co-funding marketplace</p>
-                        <p class="card-sub">Score {{ result.credit_score }} clears the {{ marketplace_min_score }} minimum — floor rate auto-set to <strong>{{ floor_rate }}%</strong></p>
+                        <p class="card-sub">Score {{ result.adjusted_score or result.credit_score }} clears the {{ marketplace_min_score }} minimum — floor rate auto-set to <strong>{{ floor_rate }}%</strong></p>
                     </div>
                 </div>
                 <form method="post" action="{{ url_for('save_and_list') }}">
@@ -448,7 +530,7 @@
                         <div class="field">
                             <label class="label">Interest rate</label>
                             <div class="input-group">
-                                <input type="number" name="interest_rate" class="input" step="0.1" min="8.5" max="28" value="{{ floor_rate }}">
+                                <input type="number" name="interest_rate" class="input" step="0.01" min="8.5" max="28" value="{{ floor_rate }}">
                                 <span class="input-suffix">%</span>
                             </div>
                             <p class="help">Floor {{ floor_rate }}% · cap 28%</p>
@@ -479,13 +561,43 @@
                     </button>
                 </form>
             </div>
+            {% elif verify_to_unlock %}
+            <div class="card" style="border:1.5px solid var(--brand)">
+                <div class="card-head" style="margin-bottom:.75rem">
+                    <i class="fas fa-key" style="color:var(--brand);font-size:1.1rem;margin-top:2px"></i>
+                    <div>
+                        <p class="card-title mb-0" style="color:var(--brand)">Score qualifies — verification needed to list</p>
+                        <p class="card-sub">Score {{ result.adjusted_score or result.credit_score }} clears the {{ marketplace_min_score }} threshold, but Data Verification Index is too low ({{ result.dvi }}/100) to list directly.</p>
+                    </div>
+                </div>
+                <div class="alert alert-warn" style="margin:0 0 .75rem">
+                    <span class="alert-icon"><i class="fas fa-shield-halved"></i></span>
+                    <div class="alert-body">
+                        <p class="alert-text">Most key inputs are self-declared. To protect investors, this applicant must go through field verification first. Once the bank officer confirms income and obligations, you can re-assess and list immediately.</p>
+                    </div>
+                </div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+                    <div style="flex:1;min-width:220px">
+                        <p class="label mb-1" style="font-size:.8rem">What happens next</p>
+                        <ol style="margin:0;padding-left:1.2em;font-size:.875rem;color:var(--text-dim);line-height:1.7">
+                            <li>Bank officer calls the borrower to verify income &amp; debt</li>
+                            <li>Re-assess with verified sources (🟢) — DVI rises</li>
+                            <li>Re-score → if DVI ≥ 60, marketplace listing unlocks instantly</li>
+                        </ol>
+                    </div>
+                    <a href="{{ url_for('lender_ops') }}" class="btn btn-primary" style="background:var(--brand);border-color:var(--brand);text-decoration:none">
+                        <i class="fas fa-list-check"></i> Move to Verification Queue
+                    </a>
+                </div>
+            </div>
+
             {% elif critical %}
             <div class="card" style="border:1.5px solid var(--bad)">
                 <div class="alert alert-critical" style="margin:0">
                     <span class="alert-icon"><i class="fas fa-ban"></i></span>
                     <div class="alert-body">
-                        <p class="alert-title">Marketplace listing not available</p>
-                        <p class="alert-text">Affordability guardrail triggered — listing for co-funding is blocked until repayment burden drops below 65% of net income.</p>
+                        <p class="alert-title">Marketplace listing not available — affordability breach</p>
+                        <p class="alert-text">FOIR guardrail triggered — existing and proposed EMIs exceed the 65% income limit. Verification cannot fix this; the loan amount or tenure must change.</p>
                     </div>
                 </div>
             </div>
@@ -495,7 +607,7 @@
                     <span class="alert-icon"><i class="fas fa-lock"></i></span>
                     <div class="alert-body">
                         <p class="alert-title">{{ score_gap }} points away from co-funding</p>
-                        <p class="alert-text">Marketplace requires {{ marketplace_min_score }}+ score. Current: {{ result.credit_score }}. Follow the improvement path to close the gap.</p>
+                        <p class="alert-text">Marketplace requires {{ marketplace_min_score }}+ score. Effective score: {{ result.adjusted_score or result.credit_score }}{% if result.dvi_penalty %} ({{ result.credit_score }} declared − {{ result.dvi_penalty }} data-confidence adjustment){% endif %}. Follow the improvement path and verify income data to close the gap.</p>
                     </div>
                 </div>
             </div>
@@ -505,6 +617,35 @@
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+.src-select {
+    font-size: .72rem;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-soft);
+    color: var(--text-dim);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.src-select:focus { border-color: var(--accent); outline: none; }
+
+.dvi-bar-bg {
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    flex: 1;
+}
+.dvi-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width .6s ease;
+}
+</style>
 {% endblock %}
 
 {% block scripts %}

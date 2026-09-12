@@ -173,9 +173,9 @@
     <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:28px;">
         <div>
             <h1 style="font-size:1.85em; margin-bottom:4px; color:var(--text);">
-                <i class="fas fa-list-check" style="color:var(--accent); margin-right:10px;"></i>Lender Operations Queue
+                <i class="fas fa-list-check" style="color:var(--accent); margin-right:10px;"></i>Field Verification Queue
             </h1>
-            <p style="color:var(--text-dim); margin-bottom:0; font-size:0.95em;">Review credit-scored applications and take action on pending borrower files</p>
+            <p style="color:var(--text-dim); margin-bottom:0; font-size:0.95em;">Cases where a bank officer's verification call can unlock credit access — sorted by impact</p>
         </div>
         <a href="{{ url_for('apply_page') }}" class="btn btn-primary" style="font-size:0.9em; padding:9px 20px; display:inline-flex; align-items:center; gap:8px; text-decoration:none;">
             <i class="fas fa-plus"></i> New Application
@@ -187,23 +187,29 @@
     {% set high_risk_count = queue|rejectattr('guardrail_severity', 'equalto', 'CLEAR')|list|length %}
     {% set ready_count = queue|selectattr('approved', 'equalto', true)|list|length %}
     {% set avg_score = (queue|sum(attribute='credit_score') / total_apps)|round(1) if total_apps > 0 else 0 %}
+    {# Proxy: data_completeness < 0.6 → needs verification #}
+    {% set needs_verify_count = queue|rejectattr('approved', 'equalto', true)|selectattr('credit_score', 'ge', 550)|list|length %}
 
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:16px; margin-bottom:24px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:16px; margin-bottom:24px;">
         <div class="stat-card">
-            <div class="stat-value text-blue-accent">{{ total_apps }}</div>
-            <div class="stat-label">Total Applications</div>
+            <div class="stat-value" style="color:var(--accent)">{{ total_apps }}</div>
+            <div class="stat-label">Total in Queue</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value" style="color:#f0b429;">{{ avg_score }}</div>
+            <div class="stat-value" style="color:var(--warn)">{{ avg_score }}</div>
             <div class="stat-label">Avg Credit Score</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value text-red-accent">{{ high_risk_count }}</div>
-            <div class="stat-label">High Risk (Guardrail)</div>
+            <div class="stat-value" style="color:var(--bad)">{{ high_risk_count }}</div>
+            <div class="stat-label">Guardrail Flags</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value text-green-accent">{{ ready_count }}</div>
-            <div class="stat-label">Ready to Lend (≥55)</div>
+            <div class="stat-value" style="color:var(--good)">{{ ready_count }}</div>
+            <div class="stat-label">Approve-Ready</div>
+        </div>
+        <div class="stat-card" style="border-color:var(--brand)33">
+            <div class="stat-value" style="color:var(--brand)">{{ needs_verify_count }}</div>
+            <div class="stat-label" style="color:var(--brand)">Verify to Unlock</div>
         </div>
     </div>
 
@@ -234,8 +240,16 @@
             <div class="filter-label" style="margin-bottom:4px;">Search</div>
             <input type="text" id="filter-search" placeholder="Search by name or state…" oninput="applyFilters()" style="width:100%; box-sizing:border-box;">
         </div>
+        <div>
+            <div class="filter-label" style="margin-bottom:4px;">Verify Priority</div>
+            <select id="filter-priority" onchange="applyFilters()">
+                <option value="ALL">All</option>
+                <option value="UNLOCK">Unlock Now (score near threshold)</option>
+                <option value="CRITICAL">Critical — must clear</option>
+            </select>
+        </div>
         <div style="display:flex; align-items:flex-end;">
-            <button onclick="clearFilters()" style="background:none; border:1px solid #30363d; color:#8b949e; border-radius:6px; padding:7px 14px; cursor:pointer; font-size:0.85em; margin-top:20px;">
+            <button onclick="clearFilters()" style="background:none; border:1px solid var(--border); color:var(--text-dim); border-radius:6px; padding:7px 14px; cursor:pointer; font-size:0.85em; margin-top:20px;">
                 <i class="fas fa-times" style="margin-right:5px;"></i>Clear
             </button>
         </div>
@@ -251,19 +265,25 @@
                     <th>State</th>
                     <th>Score</th>
                     <th>Band</th>
-                    <th>Confidence</th>
+                    <th>Data Confidence</th>
                     <th>Guardrail</th>
+                    <th>Verify Priority</th>
                     <th>Loan Requested</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="ops-table-body">
                 {% for app in queue %}
+                {% set dconf = (app.data_completeness * 100)|round|int %}
+                {% set priority = 'CRITICAL' if app.guardrail_severity == 'CRITICAL' else ('UNLOCK' if (app.credit_score >= 550 and app.credit_score < 700 and dconf < 70) else 'NORMAL') %}
                 <tr class="ops-row"
                     data-band="{{ app.tier_label | upper }}"
                     data-guardrail="{{ app.guardrail_severity | upper }}"
+                    data-priority="{{ priority }}"
                     data-name="{{ app.applicant_id | lower }}"
-                    data-state="{{ app.geography_state | lower }}">
+                    data-state="{{ app.geography_state | lower }}"
+                    data-score="{{ app.credit_score }}"
+                    data-dconf="{{ dconf }}">
                     <td>
                         <div style="font-weight:600; color:var(--text); font-size:0.92em;">{{ app.applicant_id }}</div>
                         <div style="color:var(--text-dim); font-size:0.78em; margin-top:2px; margin-bottom:0;">{{ app.entity_type }}</div>
@@ -287,11 +307,12 @@
                         </span>
                     </td>
                     <td>
+                        {% set dc_color = 'var(--good)' if dconf >= 80 else ('var(--warn)' if dconf >= 60 else 'var(--bad)') %}
                         <div class="confidence-bar-wrap">
                             <div class="confidence-bar-bg">
-                                <div class="confidence-bar-fill" style="width:{{ (app.data_completeness * 100)|round|int }}%;"></div>
+                                <div class="confidence-bar-fill" style="width:{{ dconf }}%;background:{{ dc_color }}"></div>
                             </div>
-                            <span style="font-size:0.82em; color:#8b949e; margin-bottom:0;">{{ (app.data_completeness * 100)|round|int }}%</span>
+                            <span style="font-size:0.82em;color:{{ dc_color }};font-weight:600;margin-bottom:0;">{{ dconf }}%</span>
                         </div>
                         <div style="font-size:0.75em; color:var(--text-dim); margin-top:2px;">{{ app.confidence_label }}</div>
                     </td>
@@ -308,6 +329,19 @@
                             <span class="guardrail-badge" style="background:#7f1d1d33; color:#f87171; border:1px solid #7f1d1d;">
                                 <i class="fas fa-times-circle" style="font-size:0.9em;"></i> CRITICAL
                             </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if priority == 'CRITICAL' %}
+                        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:0.8em;font-weight:700;background:var(--bad)22;color:var(--bad);border:1px solid var(--bad)55;">
+                            <i class="fas fa-exclamation-circle"></i> Must clear
+                        </span>
+                        {% elif priority == 'UNLOCK' %}
+                        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:0.8em;font-weight:700;background:var(--brand)22;color:var(--brand);border:1px solid var(--brand)55;">
+                            <i class="fas fa-key"></i> Verify to unlock
+                        </span>
+                        {% else %}
+                        <span style="color:var(--text-faint);font-size:0.8em;">—</span>
                         {% endif %}
                     </td>
                     <td>
@@ -361,9 +395,28 @@
 
 {% block scripts %}
 <script>
+    // Sort rows by verification priority on load: CRITICAL → UNLOCK → NORMAL, then by score desc
+    (function sortByPriority() {
+        const tbody = document.getElementById('ops-table-body');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('.ops-row'));
+        const pOrder = { CRITICAL: 0, UNLOCK: 1, NORMAL: 2 };
+        rows.sort(function(a, b) {
+            const pa = pOrder[a.getAttribute('data-priority')] ?? 2;
+            const pb = pOrder[b.getAttribute('data-priority')] ?? 2;
+            if (pa !== pb) return pa - pb;
+            // Within same priority: lower data confidence first (needs more work)
+            const dca = parseInt(a.getAttribute('data-dconf') || '100', 10);
+            const dcb = parseInt(b.getAttribute('data-dconf') || '100', 10);
+            return dca - dcb;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+    })();
+
     function applyFilters() {
         const bandFilter = document.getElementById('filter-band').value.toUpperCase();
         const guardrailFilter = document.getElementById('filter-guardrail').value.toUpperCase();
+        const priorityFilter = document.getElementById('filter-priority').value.toUpperCase();
         const searchTerm = document.getElementById('filter-search').value.toLowerCase().trim();
 
         const rows = document.querySelectorAll('#ops-table-body .ops-row');
@@ -372,14 +425,16 @@
         rows.forEach(function(row) {
             const band = (row.getAttribute('data-band') || '').toUpperCase();
             const guardrail = (row.getAttribute('data-guardrail') || '').toUpperCase();
+            const priority = (row.getAttribute('data-priority') || '').toUpperCase();
             const name = (row.getAttribute('data-name') || '').toLowerCase();
             const state = (row.getAttribute('data-state') || '').toLowerCase();
 
             const bandMatch = bandFilter === 'ALL' || band === bandFilter;
             const guardrailMatch = guardrailFilter === 'ALL' || guardrail === guardrailFilter;
+            const priorityMatch = priorityFilter === 'ALL' || priority === priorityFilter;
             const searchMatch = searchTerm === '' || name.includes(searchTerm) || state.includes(searchTerm);
 
-            if (bandMatch && guardrailMatch && searchMatch) {
+            if (bandMatch && guardrailMatch && priorityMatch && searchMatch) {
                 row.style.display = '';
                 visibleCount++;
             } else {
@@ -396,6 +451,7 @@
     function clearFilters() {
         document.getElementById('filter-band').value = 'ALL';
         document.getElementById('filter-guardrail').value = 'ALL';
+        document.getElementById('filter-priority').value = 'ALL';
         document.getElementById('filter-search').value = '';
         applyFilters();
     }

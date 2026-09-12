@@ -21,6 +21,37 @@ import config
 
 _COMPONENTS = None
 
+# Data Verification Index (DVI) — per-field weights and source confidence multipliers.
+# Weights reflect how much each input drives the credit score. Source confidence
+# reflects how trustworthy the data is based on how it was obtained.
+_DVI_FIELDS = {
+    # (applies_to, weight)
+    "src_income":  ("both",     40),   # income / inflow — biggest FOIR driver
+    "src_emi":     ("both",     25),   # existing debt obligations
+    "src_gst":     ("business", 25),   # GST compliance — business only
+    "src_utility": ("both",     10),   # utility / rent payment history
+}
+_SOURCE_CONFIDENCE = {"verified": 100, "estimated": 70, "self_declared": 40}
+
+
+def compute_dvi(field_sources: dict, entity_type: str) -> int:
+    """Data Verification Index (0–100): proportion of score-driving data that is
+    backed by a verifiable source rather than the borrower's own declaration.
+
+    Cash-heavy businesses are NOT penalised for low digital inflow — they can
+    declare their true income and tag it as 'estimated' (from GST/proxy signals)
+    or 'verified' (by document). Only pure self-declarations carry the lowest
+    confidence weight, giving borrowers a direct incentive to share proof."""
+    total_w = 0
+    weighted = 0
+    for field, (applies_to, w) in _DVI_FIELDS.items():
+        if applies_to == "business" and entity_type == "Individual":
+            continue
+        conf = _SOURCE_CONFIDENCE.get(field_sources.get(field, "self_declared"), 40)
+        total_w += w
+        weighted += w * conf
+    return int(round(weighted / total_w)) if total_w else 40
+
 
 def emi(principal: float, tenure_months: int, annual_rate: float = config.ASSUMED_ANNUAL_INTEREST_RATE) -> float:
     """Standard reducing-balance EMI formula."""
@@ -250,7 +281,7 @@ def foir_assessment(raw: dict) -> dict:
     }
 
 
-def guardrail_checks(raw: dict, completeness: float):
+def guardrail_checks(raw: dict, completeness: float, dvi: int = 100):
     flags = []
     assessment = foir_assessment(raw)
     foir = assessment["foir"]
@@ -287,6 +318,26 @@ def guardrail_checks(raw: dict, completeness: float):
             "message": ("This is a thin-file applicant requesting a large amount relative to observed "
                         "income. Recommend a smaller initial limit with a review after a short repayment "
                         "track record builds, rather than a single large-amount decision."),
+        })
+    # DVI guardrail — added after income/debt checks so it appears last in the list
+    if dvi < 40:
+        flags.append({
+            "severity": "critical",
+            "message": (
+                f"Data Verification Index is {dvi}/100 — most key inputs (income, existing debt, "
+                "payment history) are self-declared with no supporting document or linked data source. "
+                "A conservative haircut has been applied to the score. Field verification is required "
+                "before any credit decision or marketplace listing can proceed."
+            ),
+        })
+    elif dvi < 60:
+        flags.append({
+            "severity": "warning",
+            "message": (
+                f"Data Verification Index is {dvi}/100 — several key inputs are self-declared. "
+                "A conservative score adjustment has been applied. Recommend phone or document "
+                "verification before marketplace listing to improve investor confidence."
+            ),
         })
     return flags
 
@@ -335,7 +386,7 @@ def improvement_path(components: dict, raw: dict, current_score: int, entity_typ
     return top
 
 
-def score_core(raw: dict, entity_type: str = "Small Business") -> dict:
+def score_core(raw: dict, entity_type: str = "Small Business", dvi: int = 100) -> dict:
     """Fast path: score + confidence band + guardrails, with no per-tree
     explanation walk. Used for batch-scoring the whole portfolio and for
     the fairness audit, where explanations for every single applicant
@@ -359,7 +410,7 @@ def score_core(raw: dict, entity_type: str = "Small Business") -> dict:
 
     band_low = max(config.SCORE_MIN, score - band_width // 2)
     band_high = min(config.SCORE_MAX, score + band_width // 2)
-    guardrails = guardrail_checks(raw, completeness)
+    guardrails = guardrail_checks(raw, completeness, dvi=dvi)
     tier_label, tier_tone = score_tier(score)
     anomaly = anomaly_check(components, X_scaled)
     if anomaly["flagged"]:
@@ -398,18 +449,28 @@ def score_core(raw: dict, entity_type: str = "Small Business") -> dict:
     }
 
 
-def score_full(raw: dict, entity_type: str = "Small Business") -> dict:
+def score_full(raw: dict, entity_type: str = "Small Business", field_sources: dict = None) -> dict:
     """Full pipeline for a single applicant: score + confidence band +
     guardrails + SHAP-style reason codes + improvement path. Used for the
     live "New Assessment" form and the applicant detail page."""
+    if field_sources is None:
+        field_sources = {}
+    dvi = compute_dvi(field_sources, entity_type)
     components = load_components()
-    result = score_core(raw, entity_type)
+    result = score_core(raw, entity_type, dvi=dvi)
     X_scaled = result.pop("_X_scaled")
 
     factors = shap_factors(components, X_scaled, raw)
     result["shap_factors"] = factors
     result["reason_codes"] = map_reason_codes(factors)
     result["improvement_path"] = improvement_path(components, raw, result["credit_score"], entity_type)
+    result["dvi"] = dvi
+    result["field_sources"] = field_sources
+    # Post-processing DVI penalty: transparent, explainable adjustment.
+    # DVI ≥ 60 = no penalty; every 10 pts below 60 = ~4 pt score reduction.
+    dvi_penalty = max(0, int((60 - dvi) * 0.4)) if dvi < 60 else 0
+    result["dvi_penalty"] = dvi_penalty
+    result["adjusted_score"] = max(config.SCORE_MIN, result["credit_score"] - dvi_penalty)
     return result
 
 
@@ -463,6 +524,10 @@ def get_or_compute_full(applicant_id: str, raw: dict, entity_type: str) -> dict:
                 "approved": row[2] >= config.APPROVAL_SCORE_THRESHOLD and not any(
                     g["severity"] == "critical" for g in guardrails
                 ),
+                "dvi": None,
+                "dvi_penalty": 0,
+                "adjusted_score": row[2],
+                "field_sources": {},
             }
 
         result = score_full(raw, entity_type)

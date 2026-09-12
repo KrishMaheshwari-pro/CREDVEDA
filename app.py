@@ -744,7 +744,13 @@ def apply_page():
             "repayment_burden_ratio": repayment_burden_ratio,
             "requested_loan_amount": requested_loan_amount,
         }
-        result = scoring.score_full(raw, entity_type=entity_type)
+        field_sources = {
+            "src_income":  f.get("src_income",  "self_declared"),
+            "src_emi":     f.get("src_emi",      "self_declared"),
+            "src_gst":     f.get("src_gst",      "self_declared"),
+            "src_utility": f.get("src_utility",  "self_declared"),
+        }
+        result = scoring.score_full(raw, entity_type=entity_type, field_sources=field_sources)
         result["computed_proposed_emi"] = round(proposed_emi)
         result["computed_net_cashflow"] = round(net_cashflow)
 
@@ -754,11 +760,17 @@ def apply_page():
     matched_products = []
     draft_id = None
     if result:
-        score = result["credit_score"]
+        score = result.get("adjusted_score", result["credit_score"])
         floor_rate = _risk_based_rate(score)
         critical_flags = [g for g in result.get("guardrail_flags", []) if g["severity"] == "critical"]
-        is_listable = score >= config.MARKETPLACE_MIN_SCORE and not critical_flags
-        score_gap = max(0, config.MARKETPLACE_MIN_SCORE - score)
+        # Separate DVI-only criticals from real affordability criticals
+        dvi_critical_flags  = [g for g in critical_flags if "Data Verification Index" in g.get("message", "")]
+        foir_critical_flags = [g for g in critical_flags if "Data Verification Index" not in g.get("message", "")]
+        # Can list → score passes AND no affordability critical (DVI critical is fixable via verification)
+        is_listable = score >= config.MARKETPLACE_MIN_SCORE and not foir_critical_flags and not dvi_critical_flags
+        # "Verify to unlock" path: score would pass BUT DVI is blocking (not FOIR)
+        verify_to_unlock = (score >= config.MARKETPLACE_MIN_SCORE and dvi_critical_flags and not foir_critical_flags)
+        score_gap = max(0, config.MARKETPLACE_MIN_SCORE - score) if not verify_to_unlock else 0
         score_norm = int((score - config.SCORE_MIN) / (config.SCORE_MAX - config.SCORE_MIN) * 100)
         matched_products = get_eligible_products(
             score_norm,
@@ -776,6 +788,7 @@ def apply_page():
         approval_threshold=config.APPROVAL_SCORE_THRESHOLD,
         floor_rate=floor_rate,
         is_listable=is_listable,
+        verify_to_unlock=verify_to_unlock if result else False,
         score_gap=score_gap,
         marketplace_min_score=config.MARKETPLACE_MIN_SCORE,
         matched_products=matched_products[:3],
@@ -1625,6 +1638,31 @@ def marketplace_cancel(listing_id):
     finally:
         conn.close()
     return redirect(url_for("marketplace"))
+
+
+@app.route("/bank/proposals")
+@login_required
+def bank_proposals():
+    """Central inbox: all pending lender proposals across the bank's listings."""
+    if session.get("role") != "bank":
+        return redirect(url_for("marketplace"))
+    conn = get_db_connection()
+    try:
+        proposals = [dict(r) for r in conn.execute("""
+            SELECT li.interest_id, li.listing_id, li.lender_username,
+                   li.committed_amount, li.proposed_rate, li.message, li.created_at,
+                   ml.entity_type, ml.business_type, ml.applicant_id,
+                   ml.interest_rate AS floor_rate, ml.amount_requested,
+                   cs.credit_score
+            FROM lender_interests li
+            JOIN marketplace_listings ml ON ml.listing_id = li.listing_id
+            LEFT JOIN credit_scores cs ON cs.applicant_id = ml.applicant_id
+            WHERE ml.listed_by = ? AND li.status = 'pending'
+            ORDER BY li.created_at DESC
+        """, (session.get("username"),)).fetchall()]
+    finally:
+        conn.close()
+    return render_template("bank_proposals.html", proposals=proposals)
 
 
 # --- AI Underwriter Chatbot backend ------------------------------------------
