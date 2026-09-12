@@ -106,6 +106,22 @@ LISTINGS = [
             ("lender_kabir",   8000, 13.00, 1),
         ],
     },
+    {
+        # Fresh presentation borrower. Fully funded on the marketplace at a
+        # blended rate well under the bank's own direct offer, so the borrower's
+        # fundings page shows a clean "bank vs marketplace" choice with both
+        # offers acceptable.
+        "applicant_id": "APP-03380", "amount": 127000, "tenure": 48,
+        "purpose": "Salon expansion & equipment", "score": 844,
+        "entity_type": "Small Business", "business_type": "Salon & Personal Care",
+        "geography_tier": "Tier 2", "floor": 11.0,
+        "bank_offer_rate": 14.5, "bank_collateral": 1,
+        "bank_collateral_detail": "Equipment hypothecation + personal guarantee",
+        "commitments": [
+            ("lender_priya",  70000, 10.8, 0),     # below floor, unsecured -> active
+            ("lender_meera",  57000, 11.0, 0),     # at floor, unsecured -> active (fully funds it)
+        ],
+    },
 ]
 
 
