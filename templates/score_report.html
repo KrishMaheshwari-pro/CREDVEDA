@@ -355,7 +355,7 @@
         {% endif %}
 
         <div style="text-align:center; margin-top:1.2rem;">
-            <a href="{{ url_for('improvement_portal', app_id=app_id) }}" class="btn-primary" style="display:inline-block; text-decoration:none;">
+            <a href="{{ url_for('improvement_portal', applicant_id=app_data.applicant_id) }}" class="btn-primary" style="display:inline-block; text-decoration:none;">
                 View Full Improvement Portal &rarr;
             </a>
         </div>
@@ -394,7 +394,7 @@
 
     <!-- Footer links -->
     <div style="display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-top:1.5rem; font-size:0.82rem;">
-        <a href="{{ url_for('improvement_portal', app_id=app_id) }}" style="color:#58a6ff;">Improvement Portal</a>
+        <a href="{{ url_for('improvement_portal', applicant_id=app_data.applicant_id) }}" style="color:#58a6ff;">Improvement Portal</a>
         <span style="color:#30363d;">|</span>
         <a href="{{ url_for('dashboard_page') }}" style="color:#58a6ff;">Dashboard</a>
         <span style="color:#30363d;">|</span>

@@ -52,16 +52,13 @@
 
                 <!-- Tools dropdown -->
                 <div style="position:relative; display:inline-block;" onmouseleave="this.querySelector('.ddmenu').style.display='none'">
-                  <a href="#" class="{{ 'active' if request.endpoint in ['simulator_page','bulk_assess','parse_statement_page','lender_ops'] }}"
+                  <a href="#" class="{{ 'active' if request.endpoint in ['bulk_assess','parse_statement_page','lender_ops'] }}"
                      onmouseenter="this.nextElementSibling.style.display='block'"
                      onclick="var m=this.nextElementSibling; m.style.display=m.style.display==='block'?'none':'block'; return false;"
                      style="display:flex;align-items:center;gap:.3rem;">
                     Tools <i class="fas fa-chevron-down" style="font-size:.6rem;opacity:.7;"></i>
                   </a>
                   <div class="ddmenu" style="display:none;position:absolute;top:calc(100% + 6px);left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;min-width:185px;z-index:500;padding:.35rem 0;box-shadow:0 8px 24px rgba(0,0,0,.25);">
-                    <a href="{{ url_for('simulator_page') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
-                      <i class="fas fa-sliders" style="width:14px;color:var(--accent);"></i> Score Simulator
-                    </a>
                     <a href="{{ url_for('bulk_assess') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
                       <i class="fas fa-table" style="width:14px;color:var(--accent);"></i> Bulk CSV Assess
                     </a>
