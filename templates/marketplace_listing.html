@@ -84,6 +84,10 @@
        to read. It is now full width and stepped, so the lender can see the
        amount, the rate consequence and the collateral choice at once. -->
   {% set remaining = (listing.amount_requested or 0) - (total_committed or 0) %}
+  {# The lender can commit at most what is still needed, so the amount slider
+     spans 1000 … remaining (not the full loan). "All that is left" then fills
+     the slider to the end instead of stopping partway. #}
+  {% set cap = [remaining, 1000] | max %}
   {% if listing.status == 'open' and not already_committed and not has_pending %}
   <div class="card" style="padding:0; margin-bottom:1.5rem; overflow:hidden; border:1px solid var(--accent-line);">
     <div style="padding:1.1rem 1.5rem; background:var(--accent-soft); border-bottom:1px solid var(--accent-line);
@@ -121,18 +125,24 @@
           <div style="display:flex; align-items:center; gap:.6rem; margin-bottom:.6rem;">
             <span style="font-size:1.05rem; font-weight:700; color:var(--muted);">₹</span>
             <input type="number" name="amount" id="amountInput"
-                   min="1000" max="{{ listing.amount_requested }}" step="1000" value="{{ 10000 if remaining > 10000 else (remaining if remaining > 1000 else 1000) }}"
+                   min="1000" max="{{ cap }}" step="1000" value="{{ 10000 if remaining > 10000 else cap }}"
                    required class="form-control"
                    style="flex:1; font-size:1.35rem; font-weight:700; padding:.6rem .75rem; height:auto;"
                    oninput="syncAmount(this.value, false)">
+            <span style="font-size:.85rem; color:var(--muted); white-space:nowrap;">of ₹{{ '{:,.0f}'.format(cap) }} left</span>
           </div>
           <input type="range" id="amountSlider"
-                 min="1000" max="{{ listing.amount_requested }}" step="1000" value="{{ 10000 if remaining > 10000 else (remaining if remaining > 1000 else 1000) }}"
-                 style="width:100%; accent-color:var(--accent); height:22px; margin-bottom:.6rem;"
+                 min="1000" max="{{ cap }}" step="1000" value="{{ 10000 if remaining > 10000 else cap }}"
+                 style="width:100%; accent-color:var(--accent); height:22px; margin-bottom:.35rem;"
                  oninput="syncAmount(this.value, true)">
+          <div style="display:flex; justify-content:space-between; font-size:.7rem; color:var(--text-faint); margin-bottom:.5rem;">
+            <span>₹1,000</span>
+            <span id="pctOfRemaining" style="color:var(--accent); font-weight:700;"></span>
+            <span>₹{{ '{:,.0f}'.format(cap) }}</span>
+          </div>
           <div style="display:flex; gap:.4rem; flex-wrap:wrap;">
             {% for label, frac in [('25%', 0.25), ('50%', 0.5), ('All that is left', 1.0)] %}
-            <button type="button" class="quick-chip" onclick="syncAmount({{ (remaining * frac) | round(0, 'floor') | int }}, false, true)"
+            <button type="button" class="quick-chip" onclick="syncAmount({{ (cap * frac) | round(0, 'floor') | int }}, false, true)"
                     style="padding:.35rem .7rem; border-radius:20px; font-size:.76rem; font-weight:600; cursor:pointer;
                            background:var(--bg-soft); border:1px solid var(--border); color:var(--text);">{{ label }}</button>
             {% endfor %}
@@ -217,22 +227,19 @@
 
   <script>
     const FLOOR = {{ floor }};
-    const MAX_AMT = {{ listing.amount_requested or 0 }};
-    const REMAINING = {{ remaining if remaining > 0 else 0 }};
+    // The lender can commit at most what is still needed, so everything is
+    // bounded by CAP (= remaining), and the slider spans 1000 … CAP.
+    const CAP = {{ cap }};
+    const TOTAL = {{ listing.amount_requested or 0 }};   // full loan, for "% of loan"
 
     function syncAmount(val, fromSlider, fromChip) {
-      let v = Math.max(1000, Math.min(MAX_AMT, Math.round(Number(val) || 0)));
+      let v = Math.max(1000, Math.min(CAP, Math.round(Number(val) || 0)));
       const input = document.getElementById('amountInput');
       const slider = document.getElementById('amountSlider');
       if (!fromSlider || fromChip) slider.value = v;
       if (fromSlider || fromChip) input.value = v;
-      const hint = document.getElementById('amountHint');
-      if (v > REMAINING && REMAINING > 0) {
-        hint.innerHTML = '<span style="color:#f59e0b;">Only ₹' + REMAINING.toLocaleString('en-IN') +
-                         ' is still needed — the extra would not be used.</span>';
-      } else {
-        hint.textContent = 'Minimum ₹1,000. Auto-disbursed once the loan reaches 100%.';
-      }
+      const pct = document.getElementById('pctOfRemaining');
+      if (pct) pct.textContent = Math.round(v / CAP * 100) + '% of what’s left';
       updateSummary();
     }
 
@@ -262,12 +269,13 @@
     function updateSummary() {
       const amt = Number(document.getElementById('amountInput').value) || 0;
       const rate = parseFloat(document.getElementById('rateInput').value) || FLOOR;
-      const share = MAX_AMT ? Math.round(amt / MAX_AMT * 100) : 0;
+      const share = TOTAL ? Math.round(amt / TOTAL * 100) : 0;
       document.getElementById('commitSummary').innerHTML =
         'You are funding <strong style="color:var(--text);">₹' + amt.toLocaleString('en-IN') + '</strong>' +
         ' (' + share + '% of the loan) at <strong style="color:var(--text);">' + rate + '% p.a.</strong>';
     }
-    updateSummary();
+    // Initialise the slider label + summary from the starting value.
+    syncAmount(document.getElementById('amountInput').value, false);
   </script>
   {% endif %}
 
