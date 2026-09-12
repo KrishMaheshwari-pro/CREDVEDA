@@ -33,6 +33,50 @@ _DVI_FIELDS = {
 }
 _SOURCE_CONFIDENCE = {"verified": 100, "estimated": 70, "self_declared": 30}
 
+# Maximum credit-score penalty (points on the 300–900 scale) for each input
+# when it is fully unverified. The asymmetry is the whole point: data that a
+# genuine borrower can trivially prove (a bank statement, a GST login) is a
+# red flag when withheld and is punished hard; data that is genuinely hard to
+# evidence (cash counter sales) barely moves the score, because penalising it
+# would just punish honest cash-economy borrowers.
+_VERIF_MAX_PENALTY = {
+    "digital_income": 70,   # bank/UPI inflow — a statement proves it in one click
+    "emi":            45,   # understating existing debt is the classic default cause
+    "gst":            30,   # GST portal is one login for a registered business
+    "cash_income":    12,   # genuinely hard to prove — treated leniently
+    "utility":        10,
+}
+# How much of the max penalty applies at each evidence level.
+_PENALTY_FRACTION = {"verified": 0.0, "estimated": 0.35, "self_declared": 1.0}
+
+
+def verification_penalty(*, digital_amt, digital_src, cash_amt, cash_src,
+                         emi_amt, emi_src, gst_registered, gst_src,
+                         utility_src, entity_type) -> int:
+    """Score points to deduct for unverified inputs, weighted by how provable
+    each input is in the real world.
+
+    Unverified bank income is a large hit (a statement would settle it);
+    unverified cash income is a small one (often unprovable). Undeclared-proof
+    on existing debt and GST — both cheaply verifiable — are punished firmly.
+    A fully-documented file loses ~0; a file that claims a big bank income and
+    debts but shows nothing loses well over a hundred points, which is the
+    difference between an approvable tier and a decline."""
+    total_income = max((digital_amt or 0) + (cash_amt or 0), 1.0)
+    pen = 0.0
+    # Income penalty is split by the share that is digital (must be provable)
+    # vs cash (hard to prove), so a cash-heavy but honest borrower is spared.
+    dig_share = (digital_amt or 0) / total_income
+    cash_share = (cash_amt or 0) / total_income
+    pen += _VERIF_MAX_PENALTY["digital_income"] * dig_share * _PENALTY_FRACTION.get(digital_src, 1.0)
+    pen += _VERIF_MAX_PENALTY["cash_income"] * cash_share * _PENALTY_FRACTION.get(cash_src, 1.0)
+    if (emi_amt or 0) > 0:  # nothing to verify if there is no existing debt
+        pen += _VERIF_MAX_PENALTY["emi"] * _PENALTY_FRACTION.get(emi_src, 1.0)
+    if gst_registered and entity_type != "Individual":
+        pen += _VERIF_MAX_PENALTY["gst"] * _PENALTY_FRACTION.get(gst_src, 1.0)
+    pen += _VERIF_MAX_PENALTY["utility"] * _PENALTY_FRACTION.get(utility_src, 1.0)
+    return int(round(pen))
+
 
 def blend_income_confidence(digital_amt: float, digital_src: str,
                             cash_amt: float, cash_src: str) -> float:
@@ -472,7 +516,7 @@ def score_core(raw: dict, entity_type: str = "Small Business", dvi: int = 100) -
 
 
 def score_full(raw: dict, entity_type: str = "Small Business", field_sources: dict = None,
-               income_confidence: float = None) -> dict:
+               income_confidence: float = None, verif_penalty: int = None) -> dict:
     """Full pipeline for a single applicant: score + confidence band +
     guardrails + SHAP-style reason codes + improvement path. Used for the
     live "New Assessment" form and the applicant detail page."""
@@ -489,11 +533,14 @@ def score_full(raw: dict, entity_type: str = "Small Business", field_sources: di
     result["improvement_path"] = improvement_path(components, raw, result["credit_score"], entity_type)
     result["dvi"] = dvi
     result["field_sources"] = field_sources
-    # Post-processing DVI penalty: transparent, explainable adjustment.
-    # DVI ≥ 60 = no penalty; every 10 pts below 60 = ~4 pt score reduction.
-    dvi_penalty = max(0, int((60 - dvi) * 0.4)) if dvi < 60 else 0
-    result["dvi_penalty"] = dvi_penalty
-    result["adjusted_score"] = max(config.SCORE_MIN, result["credit_score"] - dvi_penalty)
+    # The score deduction for unverified inputs. When the caller supplies the
+    # field-aware verification_penalty (it has the amounts and sources), use it;
+    # otherwise fall back to a mild DVI-proportional penalty so batch/cached
+    # paths still behave.
+    if verif_penalty is None:
+        verif_penalty = max(0, int((60 - dvi) * 0.4)) if dvi < 60 else 0
+    result["dvi_penalty"] = verif_penalty
+    result["adjusted_score"] = max(config.SCORE_MIN, result["credit_score"] - verif_penalty)
     return result
 
 

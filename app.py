@@ -767,8 +767,15 @@ def apply_page():
             "src_gst":     f.get("src_gst",      "self_declared"),
             "src_utility": f.get("src_utility",  "self_declared"),
         }
+        verif_pen = scoring.verification_penalty(
+            digital_amt=digital_inflow, digital_src=f.get("src_income_digital", "verified"),
+            cash_amt=cash_inflow, cash_src=f.get("src_income_cash", "self_declared"),
+            emi_amt=existing_monthly_emi, emi_src=f.get("src_emi", "self_declared"),
+            gst_registered=bool(gst_registered), gst_src=f.get("src_gst", "self_declared"),
+            utility_src=f.get("src_utility", "self_declared"), entity_type=entity_type,
+        )
         result = scoring.score_full(raw, entity_type=entity_type, field_sources=field_sources,
-                                    income_confidence=income_confidence)
+                                    income_confidence=income_confidence, verif_penalty=verif_pen)
         result["computed_proposed_emi"] = round(proposed_emi)
         result["computed_net_cashflow"] = round(net_cashflow)
 
@@ -777,18 +784,31 @@ def apply_page():
     score_gap = None
     matched_products = []
     draft_id = None
+    can_verify = False
     if result:
-        score = result.get("adjusted_score", result["credit_score"])
-        floor_rate = _risk_based_rate(score)
+        base_score = result["credit_score"]            # what a fully-verified file would score
+        adj_score = result.get("adjusted_score", base_score)  # after the unverified-data penalty
+        penalty = result.get("dvi_penalty", 0)
+        dvi = result.get("dvi")
+        floor_rate = _risk_based_rate(adj_score)
+        MIN = config.MARKETPLACE_MIN_SCORE
+
         critical_flags = [g for g in result.get("guardrail_flags", []) if g["severity"] == "critical"]
-        # Separate DVI-only criticals from real affordability criticals
-        dvi_critical_flags  = [g for g in critical_flags if "Data Verification Index" in g.get("message", "")]
         foir_critical_flags = [g for g in critical_flags if "Data Verification Index" not in g.get("message", "")]
-        # Can list → score passes AND no affordability critical (DVI critical is fixable via verification)
-        is_listable = score >= config.MARKETPLACE_MIN_SCORE and not foir_critical_flags and not dvi_critical_flags
-        # "Verify to unlock" path: score would pass BUT DVI is blocking (not FOIR)
-        verify_to_unlock = (score >= config.MARKETPLACE_MIN_SCORE and dvi_critical_flags and not foir_critical_flags)
-        score_gap = max(0, config.MARKETPLACE_MIN_SCORE - score) if not verify_to_unlock else 0
+        foir_critical = bool(foir_critical_flags)
+
+        # There is unverified must-prove data that a field visit / documents could
+        # upgrade (that's exactly what created the penalty).
+        can_verify = penalty > 0
+
+        # 1) Affordability breach → hard decline, verification cannot fix it.
+        # 2) Verified enough & clears the bar → listable.
+        # 3) Would clear the bar if verified, but unproven data dropped it → ops queue.
+        # 4) Below the bar even fully verified → improvement path (score_gap).
+        is_listable = (not foir_critical) and adj_score >= MIN and (dvi is None or dvi >= 40)
+        verify_to_unlock = (not foir_critical) and (not is_listable) and base_score >= MIN and penalty > 0
+        score_gap = max(0, MIN - base_score)   # genuine shortfall, present even when verified
+        score = adj_score
         score_norm = int((score - config.SCORE_MIN) / (config.SCORE_MAX - config.SCORE_MIN) * 100)
         matched_products = get_eligible_products(
             score_norm,
@@ -807,11 +827,205 @@ def apply_page():
         floor_rate=floor_rate,
         is_listable=is_listable,
         verify_to_unlock=verify_to_unlock if result else False,
+        can_verify=can_verify,
+        foir_critical=(foir_critical if result else False),
         score_gap=score_gap,
         marketplace_min_score=config.MARKETPLACE_MIN_SCORE,
         matched_products=matched_products[:3],
         draft_id=draft_id,
     )
+
+
+def _pct(v):
+    """DB stores several fields as 0–1 ratios; the form shows them as %."""
+    try:
+        return round(float(v) * 100, 1)
+    except (TypeError, ValueError):
+        return None
+
+
+@app.route("/api/lookup-applicant")
+@login_required
+def lookup_applicant():
+    """Type-ahead search for a returning borrower already on the platform.
+    Returns id/type/business/last-score plus a form-ready `prefill` so the bank
+    can reuse an already-verified profile instead of re-entering and
+    re-verifying everything. Because the profile was vetted before, the caller
+    marks its data sources as verified, which lifts the DVI."""
+    q = (request.args.get("q", "") or "").strip().upper()
+    if len(q) < 2:
+        return jsonify({"matches": []})
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"matches": []})
+    try:
+        rows = conn.execute(
+            "SELECT * FROM applicants WHERE UPPER(applicant_id) LIKE ? ORDER BY applicant_id LIMIT 8",
+            (f"%{q}%",)
+        ).fetchall()
+        matches = []
+        for r in rows:
+            a = dict(r)
+            sc = conn.execute(
+                "SELECT credit_score, data_completeness, scored_at FROM credit_scores WHERE applicant_id=?",
+                (a["applicant_id"],)
+            ).fetchone()
+            prefill = {
+                "entity_type": a.get("entity_type"),
+                "business_type": a.get("business_type"),
+                "geography_tier": a.get("geography_tier"),
+                "gender": a.get("gender"),
+                "vintage_months": a.get("vintage_months"),
+                "avg_monthly_inflow": a.get("avg_monthly_inflow"),
+                "monthly_txn_count": a.get("monthly_txn_count"),
+                "txn_bounce_rate": _pct(a.get("txn_bounce_rate")),
+                "digital_adoption_ratio": _pct(a.get("digital_adoption_ratio")),
+                "inflow_growth_rate_6m": _pct(a.get("inflow_growth_rate_6m")),
+                "inflow_volatility_cv": _pct(a.get("inflow_volatility_cv")),
+                "gst_registered": bool(a.get("gst_registered")),
+                "gst_filing_regularity": _pct(a.get("gst_filing_regularity")),
+                "overdue_invoice_ratio": _pct(a.get("overdue_invoice_ratio")),
+                "utility_ontime_ratio": _pct(a.get("utility_ontime_ratio")),
+                "rent_ontime_ratio": _pct(a.get("rent_ontime_ratio")),
+                "supplier_concentration_hhi": _pct(a.get("supplier_concentration_hhi")),
+                "repeat_supplier_ratio": _pct(a.get("repeat_supplier_ratio")),
+                "existing_loan_count": a.get("existing_loan_count"),
+                "existing_monthly_emi": a.get("existing_monthly_emi"),
+                "bureau_score_available": bool(a.get("bureau_score_available")),
+                "bureau_score_raw": a.get("bureau_score_raw"),
+                "requested_loan_amount": a.get("requested_loan_amount"),
+                "requested_tenure_months": a.get("requested_tenure_months"),
+            }
+            matches.append({
+                "applicant_id": a["applicant_id"],
+                "entity_type": a.get("entity_type", ""),
+                "business_type": a.get("business_type", ""),
+                "geography_tier": a.get("geography_tier", ""),
+                "credit_score": sc["credit_score"] if sc else None,
+                "data_completeness": sc["data_completeness"] if sc else None,
+                "scored_at": (sc["scored_at"] or "")[:10] if sc else None,
+                "prefill": prefill,
+            })
+    finally:
+        conn.close()
+    return jsonify({"matches": matches})
+
+
+def _ensure_verification_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS verification_queue (
+            vq_id            TEXT PRIMARY KEY,
+            applicant_id     TEXT,
+            entity_type      TEXT,
+            business_type    TEXT,
+            requested_amount REAL,
+            declared_score   INTEGER,
+            effective_score  INTEGER,
+            penalty          INTEGER,
+            dvi              INTEGER,
+            reason           TEXT,
+            unverified       TEXT,
+            status           TEXT DEFAULT 'pending',
+            created_at       TEXT
+        )
+    """)
+
+
+@app.route("/send-to-verification", methods=["POST"])
+@login_required
+def send_to_verification():
+    """Records an applicant whose score is dragged down by unverified must-prove
+    data into the field-verification queue. This is the bank officer's action;
+    it presumes the borrower agrees to the verification (call / documents /
+    visit). Once verified, the officer re-assesses with 🟢 sources and the
+    penalty is removed."""
+    f = request.form
+
+    def num(name, default=0.0):
+        try:
+            return float(f.get(name, default) or default)
+        except ValueError:
+            return default
+
+    entity_type = f.get("entity_type", "Small Business")
+    is_business = entity_type == "Small Business"
+    digital_inflow = max(num("avg_monthly_inflow", 20000), 0.0)
+    cash_inflow = max(num("cash_monthly_inflow", 0), 0.0)
+    avg_monthly_inflow = max(digital_inflow + cash_inflow, 1.0)
+    income_confidence = scoring.blend_income_confidence(
+        digital_inflow, f.get("src_income_digital", "verified"),
+        cash_inflow, f.get("src_income_cash", "self_declared"),
+    )
+    monthly_expenses = num("monthly_expenses", avg_monthly_inflow * 0.65)
+    net_cashflow = max(avg_monthly_inflow - monthly_expenses, 1500)
+    existing_monthly_emi = num("existing_monthly_emi", 0)
+    requested_loan_amount = num("requested_loan_amount", 100000)
+    requested_tenure_months = int(num("requested_tenure_months", 24))
+    proposed_emi = scoring.emi(requested_loan_amount, requested_tenure_months)
+    repayment_burden_ratio = (existing_monthly_emi + proposed_emi) / net_cashflow
+    gst_registered = 1 if (is_business and f.get("gst_registered") == "on") else 0
+    bureau_available = f.get("bureau_score_available") == "on"
+
+    raw = {
+        "avg_monthly_inflow": avg_monthly_inflow,
+        "inflow_growth_rate_6m": num("inflow_growth_rate_6m", 0) / 100.0,
+        "inflow_volatility_cv": num("inflow_volatility_cv", 20) / 100.0,
+        "monthly_txn_count": num("monthly_txn_count", 40),
+        "txn_bounce_rate": num("txn_bounce_rate", 5) / 100.0,
+        "digital_adoption_ratio": num("digital_adoption_ratio", 60) / 100.0,
+        "gst_registered": gst_registered,
+        "gst_filing_regularity": (num("gst_filing_regularity", 80) / 100.0) if gst_registered else None,
+        "overdue_invoice_ratio": (num("overdue_invoice_ratio", 10) / 100.0) if gst_registered else None,
+        "utility_ontime_ratio": num("utility_ontime_ratio", 85) / 100.0,
+        "rent_ontime_ratio": num("rent_ontime_ratio", 85) / 100.0,
+        "supplier_concentration_hhi": (num("supplier_concentration_hhi", 30) / 100.0) if is_business else None,
+        "repeat_supplier_ratio": (num("repeat_supplier_ratio", 60) / 100.0) if is_business else None,
+        "vintage_months": num("vintage_months", 24),
+        "existing_loan_count": int(num("existing_loan_count", 0)),
+        "bureau_score_available": 1 if bureau_available else 0,
+        "bureau_score_norm": ((num("bureau_score_raw", 650) - 300) / 600.0) if bureau_available else None,
+        "repayment_burden_ratio": repayment_burden_ratio,
+        "requested_loan_amount": requested_loan_amount,
+    }
+    verif_pen = scoring.verification_penalty(
+        digital_amt=digital_inflow, digital_src=f.get("src_income_digital", "verified"),
+        cash_amt=cash_inflow, cash_src=f.get("src_income_cash", "self_declared"),
+        emi_amt=existing_monthly_emi, emi_src=f.get("src_emi", "self_declared"),
+        gst_registered=bool(gst_registered), gst_src=f.get("src_gst", "self_declared"),
+        utility_src=f.get("src_utility", "self_declared"), entity_type=entity_type,
+    )
+    result = scoring.score_full(raw, entity_type=entity_type, income_confidence=income_confidence,
+                                verif_penalty=verif_pen)
+
+    # Which must-prove inputs are unverified (the officer's checklist)
+    unverified = []
+    if f.get("src_income_digital", "verified") != "verified" and digital_inflow > 0:
+        unverified.append("Bank/digital income")
+    if f.get("src_income_cash", "self_declared") != "verified" and cash_inflow > 0:
+        unverified.append("Cash income")
+    if f.get("src_emi", "self_declared") != "verified" and existing_monthly_emi > 0:
+        unverified.append("Existing EMIs")
+    if gst_registered and f.get("src_gst", "self_declared") != "verified":
+        unverified.append("GST filings")
+
+    applicant_id = f.get("returning_applicant_id") or ("VERIFY-" + str(uuid.uuid4())[:8].upper())
+    conn = get_db_connection()
+    try:
+        _ensure_verification_table(conn)
+        conn.execute("""
+            INSERT INTO verification_queue
+            (vq_id, applicant_id, entity_type, business_type, requested_amount,
+             declared_score, effective_score, penalty, dvi, reason, unverified, status, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?)
+        """, (str(uuid.uuid4())[:12], applicant_id, entity_type, f.get("business_type", ""),
+              requested_loan_amount, result["credit_score"], result["adjusted_score"],
+              verif_pen, result.get("dvi"), "Unverified must-prove data",
+              ", ".join(unverified), datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("lender_ops", flagged=applicant_id))
 
 
 @app.route("/save-and-list", methods=["POST"])
@@ -866,13 +1080,27 @@ def save_and_list():
         "repayment_burden_ratio": repayment_burden_ratio,
         "requested_loan_amount": requested_loan_amount,
     }
+    if income_confidence >= 85:
+        income_tag = "verified"
+    elif income_confidence >= 55:
+        income_tag = "estimated"
+    else:
+        income_tag = "self_declared"
     field_sources = {
+        "src_income":  income_tag,
         "src_emi":     f.get("src_emi",      "self_declared"),
         "src_gst":     f.get("src_gst",      "self_declared"),
         "src_utility": f.get("src_utility",  "self_declared"),
     }
+    verif_pen = scoring.verification_penalty(
+        digital_amt=digital_inflow, digital_src=f.get("src_income_digital", "verified"),
+        cash_amt=cash_inflow, cash_src=f.get("src_income_cash", "self_declared"),
+        emi_amt=existing_monthly_emi, emi_src=f.get("src_emi", "self_declared"),
+        gst_registered=bool(gst_registered), gst_src=f.get("src_gst", "self_declared"),
+        utility_src=f.get("src_utility", "self_declared"), entity_type=entity_type,
+    )
     result = scoring.score_full(raw, entity_type=entity_type, field_sources=field_sources,
-                                income_confidence=income_confidence)
+                                income_confidence=income_confidence, verif_penalty=verif_pen)
 
     # Eligibility uses the DVI-adjusted score. A real affordability (FOIR)
     # critical blocks listing; a DVI critical should have been routed to the
@@ -1115,7 +1343,21 @@ def lender_ops():
         "listable": sum(1 for q in queue if q["listable"]),
     }
 
+    # Cases explicitly flagged for field verification (from the assess page).
+    verify_items = []
+    conn = get_db_connection()
+    if conn:
+        try:
+            _ensure_verification_table(conn)
+            verify_items = [dict(r) for r in conn.execute(
+                "SELECT * FROM verification_queue WHERE status='pending' ORDER BY created_at DESC"
+            ).fetchall()]
+        finally:
+            conn.close()
+
     return render_template("lender_ops.html", queue=queue, stats=ops_stats,
+                           verify_items=verify_items,
+                           flagged=request.args.get("flagged"),
                            approval_threshold=config.APPROVAL_SCORE_THRESHOLD,
                            min_marketplace_score=config.MARKETPLACE_MIN_SCORE,
                            score_min=config.SCORE_MIN, score_max=config.SCORE_MAX)

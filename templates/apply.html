@@ -27,6 +27,28 @@
         <!-- ---------------- FORM ---------------- -->
         <form method="post" class="card" id="assessForm">
 
+            <!-- Returning borrower lookup -->
+            <div class="formsection" style="border-top:none;padding-top:0;margin-top:0">
+                <div class="formsection-head"><span class="formsection-num" style="background:var(--good)">↺</span>
+                    <h3>Returning borrower?</h3>
+                </div>
+                <p class="help mb-2" style="margin-top:-4px">
+                    Already assessed on CredVeda? Search to load their verified profile — history is carried over
+                    and documents don't need re-verifying, so the score reflects everything you already know.
+                </p>
+                <input type="hidden" name="returning_applicant_id" id="returning_applicant_id" value="{{ form_values.returning_applicant_id or '' }}">
+                <div style="position:relative">
+                    <div class="input-group">
+                        <input type="text" id="borrowerSearch" class="input" autocomplete="off"
+                               placeholder="Search by Applicant ID (e.g. APP-00042)"
+                               oninput="searchBorrowers(this.value)">
+                        <span class="input-suffix"><i class="fas fa-magnifying-glass"></i></span>
+                    </div>
+                    <div id="borrowerResults" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:var(--card);border:1px solid var(--border);border-radius:10px;max-height:280px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.25)"></div>
+                </div>
+                <div id="loadedBorrower" style="display:none;margin-top:.75rem"></div>
+            </div>
+
             <div class="formsection">
                 <div class="formsection-head"><span class="formsection-num">1</span>
                     <h3>Applicant profile</h3>
@@ -530,7 +552,17 @@
             </div>
 
             <!-- ===== MARKETPLACE ACTION ===== -->
-            {% if is_listable %}
+            {% if foir_critical %}
+            <div class="card" style="border:1.5px solid var(--bad)">
+                <div class="alert alert-critical" style="margin:0">
+                    <span class="alert-icon"><i class="fas fa-ban"></i></span>
+                    <div class="alert-body">
+                        <p class="alert-title">Marketplace listing not available — affordability breach</p>
+                        <p class="alert-text">FOIR guardrail triggered — existing and proposed EMIs exceed the 65% income limit. Verification cannot fix this; the loan amount or tenure must change.</p>
+                    </div>
+                </div>
+            </div>
+            {% elif is_listable %}
             <div class="card" style="border:1.5px solid var(--good)">
                 <div class="card-head" style="margin-bottom:.75rem">
                     <i class="fas fa-store" style="color:var(--good);font-size:1.1rem;margin-top:2px"></i>
@@ -573,9 +605,41 @@
                             <input type="text" name="borrower_phone" class="input" placeholder="10-digit mobile">
                         </div>
                     </div>
+
+                    <!-- Bank's own competing direct offer + collateral policy -->
+                    <div style="margin-top:1rem;padding-top:1rem;border-top:1px dashed var(--border)">
+                        <div class="checkrow" style="padding-top:0">
+                            <input type="checkbox" name="bank_direct_offer" id="bank_direct_offer" checked onchange="toggleBankOffer()">
+                            <label for="bank_direct_offer">Also extend the bank's own direct offer (competes with marketplace lenders)</label>
+                        </div>
+                        <div id="bankOfferFields" class="grid grid-2" style="gap:0 16px">
+                            <div class="field">
+                                <label class="label">Bank direct rate <span class="hint">· usually higher</span></label>
+                                <div class="input-group">
+                                    <input type="number" name="bank_offer_rate" class="input" step="0.01" min="8.5" max="32"
+                                           value="{{ (floor_rate + 3.5)|round(2) }}">
+                                    <span class="input-suffix">%</span>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label class="label">Collateral for bank offer</label>
+                                <select name="bank_offer_collateral" class="select">
+                                    <option value="1" selected>Required</option>
+                                    <option value="0">Not required</option>
+                                </select>
+                            </div>
+                            <div class="field" style="grid-column:1/-1">
+                                <label class="label">Collateral detail <span class="hint">· shown to borrower</span></label>
+                                <input type="text" name="bank_offer_collateral_detail" class="input"
+                                       placeholder="e.g. Property / gold worth 120% of loan, or hypothecation of stock">
+                            </div>
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-primary btn-block mt-2">
                         <i class="fas fa-store"></i> Save &amp; list on marketplace
                     </button>
+                    <p class="help center mb-0 mt-2">Lenders can co-fund at or above the floor rate; the borrower chooses between the bank's direct offer and the lender offers.</p>
                 </form>
             </div>
             {% elif verify_to_unlock %}
@@ -583,50 +647,54 @@
                 <div class="card-head" style="margin-bottom:.75rem">
                     <i class="fas fa-key" style="color:var(--brand);font-size:1.1rem;margin-top:2px"></i>
                     <div>
-                        <p class="card-title mb-0" style="color:var(--brand)">Score qualifies — verification needed to list</p>
-                        <p class="card-sub">Score {{ result.adjusted_score or result.credit_score }} clears the {{ marketplace_min_score }} threshold, but Data Verification Index is too low ({{ result.dvi }}/100) to list directly.</p>
+                        <p class="card-title mb-0" style="color:var(--brand)">Would qualify if verified — {{ result.dvi_penalty }} pts held back</p>
+                        <p class="card-sub">Declared score {{ result.credit_score }} clears the {{ marketplace_min_score }} bar, but unverified data (🔴) pulled the effective score to {{ result.adjusted_score }}. Verifying restores it.</p>
                     </div>
                 </div>
                 <div class="alert alert-warn" style="margin:0 0 .75rem">
                     <span class="alert-icon"><i class="fas fa-shield-halved"></i></span>
                     <div class="alert-body">
-                        <p class="alert-text">Most key inputs are self-declared. To protect investors, this applicant must go through field verification first. Once the bank officer confirms income and obligations, you can re-assess and list immediately.</p>
+                        <p class="alert-text">Key figures a borrower can normally prove (bank income, existing EMIs, GST) are self-declared. Rather than list an unverified file to investors, send it for a quick field verification — the borrower agrees to a call / document share, and once confirmed the full score is restored and it lists automatically.</p>
                     </div>
                 </div>
                 <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
                     <div style="flex:1;min-width:220px">
                         <p class="label mb-1" style="font-size:.8rem">What happens next</p>
                         <ol style="margin:0;padding-left:1.2em;font-size:.875rem;color:var(--text-dim);line-height:1.7">
-                            <li>Bank officer calls the borrower to verify income &amp; debt</li>
-                            <li>Re-assess with verified sources (🟢) — DVI rises</li>
-                            <li>Re-score → if DVI ≥ 60, marketplace listing unlocks instantly</li>
+                            <li>Borrower agrees to verification (call / doc share / field visit)</li>
+                            <li>Bank officer confirms income &amp; obligations, marks sources 🟢</li>
+                            <li>Re-score → penalty removed → lists on the marketplace instantly</li>
                         </ol>
                     </div>
-                    <a href="{{ url_for('lender_ops') }}" class="btn btn-primary" style="background:var(--brand);border-color:var(--brand);text-decoration:none">
-                        <i class="fas fa-list-check"></i> Move to Verification Queue
-                    </a>
+                    <form method="post" action="{{ url_for('send_to_verification') }}" style="margin:0">
+                        {% for k, v in form_values.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+                        <button type="submit" class="btn btn-primary" style="background:var(--brand);border-color:var(--brand)">
+                            <i class="fas fa-list-check"></i> Send to Verification Queue
+                        </button>
+                    </form>
                 </div>
             </div>
 
-            {% elif critical %}
-            <div class="card" style="border:1.5px solid var(--bad)">
-                <div class="alert alert-critical" style="margin:0">
-                    <span class="alert-icon"><i class="fas fa-ban"></i></span>
-                    <div class="alert-body">
-                        <p class="alert-title">Marketplace listing not available — affordability breach</p>
-                        <p class="alert-text">FOIR guardrail triggered — existing and proposed EMIs exceed the 65% income limit. Verification cannot fix this; the loan amount or tenure must change.</p>
-                    </div>
-                </div>
-            </div>
             {% elif score_gap > 0 %}
             <div class="card" style="border:1.5px solid var(--warn)">
-                <div class="alert alert-warn" style="margin:0">
+                <div class="alert alert-warn" style="margin:0 0 {% if can_verify %}.75rem{% else %}0{% endif %}">
                     <span class="alert-icon"><i class="fas fa-lock"></i></span>
                     <div class="alert-body">
                         <p class="alert-title">{{ score_gap }} points away from co-funding</p>
-                        <p class="alert-text">Marketplace requires {{ marketplace_min_score }}+ score. Effective score: {{ result.adjusted_score or result.credit_score }}{% if result.dvi_penalty %} ({{ result.credit_score }} declared − {{ result.dvi_penalty }} data-confidence adjustment){% endif %}. Follow the improvement path and verify income data to close the gap.</p>
+                        <p class="alert-text">Marketplace requires {{ marketplace_min_score }}+. This applicant scores {{ result.credit_score }} even with everything verified, so the gap is a genuine credit shortfall — follow the improvement path below.{% if can_verify %} Some inputs are also unverified, which is holding back a further {{ result.dvi_penalty }} pts.{% endif %}</p>
                     </div>
                 </div>
+                {% if can_verify %}
+                <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+                    <p class="help mb-0" style="flex:1;min-width:200px">Optional: verify the self-declared figures for an accurate score before deciding.</p>
+                    <form method="post" action="{{ url_for('send_to_verification') }}" style="margin:0">
+                        {% for k, v in form_values.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+                        <button type="submit" class="btn btn-ghost btn-sm">
+                            <i class="fas fa-list-check"></i> Send to Verification Queue
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
             </div>
             {% endif %}
 
@@ -738,6 +806,11 @@
         document.getElementById('bureau-fields')
             .classList.toggle('is-disabled', !document.getElementById('bureau_score_available').checked);
     }
+    function toggleBankOffer() {
+        const on = document.getElementById('bank_direct_offer');
+        const box = document.getElementById('bankOfferFields');
+        if (on && box) box.classList.toggle('is-disabled', !on.checked);
+    }
 
     function loadPreset(name) {
         const p = PRESETS[name];
@@ -752,6 +825,91 @@
         toggleGst(); toggleBureau();
         document.getElementById('assessForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+
+    // ---------- Returning borrower lookup ----------
+    let searchTimer = null;
+    function searchBorrowers(q) {
+        clearTimeout(searchTimer);
+        const box = document.getElementById('borrowerResults');
+        if (!q || q.trim().length < 2) { box.style.display = 'none'; return; }
+        searchTimer = setTimeout(() => {
+            fetch('/api/lookup-applicant?q=' + encodeURIComponent(q.trim()))
+                .then(r => r.json())
+                .then(d => renderBorrowerResults(d.matches || []))
+                .catch(() => { box.style.display = 'none'; });
+        }, 220);
+    }
+
+    function renderBorrowerResults(matches) {
+        const box = document.getElementById('borrowerResults');
+        if (!matches.length) {
+            box.innerHTML = '<div style="padding:.7rem .9rem;color:var(--text-dim);font-size:.85rem">No matching borrower found.</div>';
+            box.style.display = 'block';
+            return;
+        }
+        box.innerHTML = matches.map((m, i) => {
+            const score = m.credit_score ? ('<span style="color:var(--accent);font-weight:700">' + m.credit_score + '</span>') : '<span style="color:var(--text-faint)">no score</span>';
+            const conf = m.data_completeness != null ? (Math.round(m.data_completeness * 100) + '% data') : '';
+            return '<div class="borrower-hit" onclick="selectBorrower(' + i + ')" style="padding:.6rem .9rem;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px" onmouseenter="this.style.background=\'var(--bg-soft)\'" onmouseleave="this.style.background=\'\'">' +
+                '<div><div style="font-weight:600;font-size:.87rem">' + m.applicant_id + '</div>' +
+                '<div style="font-size:.75rem;color:var(--text-dim)">' + (m.business_type || m.entity_type) + ' · ' + (m.geography_tier || '') + '</div></div>' +
+                '<div style="text-align:right;font-size:.78rem">' + score + '<div style="color:var(--text-faint);font-size:.72rem">' + conf + '</div></div></div>';
+        }).join('');
+        box.style.display = 'block';
+        window._borrowerMatches = matches;
+    }
+
+    function selectBorrower(i) {
+        const m = (window._borrowerMatches || [])[i];
+        if (!m) return;
+        const p = m.prefill || {};
+        // Fill every field we have a value for
+        Object.entries(p).forEach(([key, value]) => {
+            if (value === null || value === undefined) return;
+            const el = document.getElementById(key);
+            if (!el) return;
+            if (el.type === 'checkbox') el.checked = Boolean(value);
+            else el.value = value;
+        });
+        onEntityTypeChange(p.business_type);
+        toggleGst(); toggleBureau();
+        // A returning, previously-vetted borrower: mark every data source as
+        // verified so the DVI reflects that their documents are already on file.
+        document.querySelectorAll('.src-select').forEach(sel => {
+            if ([...sel.options].some(o => o.value === 'verified')) sel.value = 'verified';
+        });
+        // Put the whole known inflow into the verifiable digital field.
+        const cash = document.getElementById('cash_monthly_inflow');
+        if (cash) cash.value = 0;
+        document.getElementById('returning_applicant_id').value = m.applicant_id;
+        document.getElementById('borrowerResults').style.display = 'none';
+        document.getElementById('borrowerSearch').value = m.applicant_id;
+
+        const banner = document.getElementById('loadedBorrower');
+        banner.style.display = 'block';
+        banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:.7rem .9rem;border-radius:10px;background:var(--good)15;border:1px solid var(--good)55">' +
+            '<i class="fas fa-circle-check" style="color:var(--good)"></i>' +
+            '<div style="flex:1"><div style="font-weight:600;font-size:.87rem;color:var(--good)">Loaded verified profile — ' + m.applicant_id + '</div>' +
+            '<div style="font-size:.78rem;color:var(--text-dim)">Prior history included · data sources marked verified' +
+            (m.credit_score ? ' · last score ' + m.credit_score : '') + '. Review the fields below and compute an updated score.</div></div>' +
+            '<a href="/passport/' + m.applicant_id + '" target="_blank" style="font-size:.78rem;color:var(--accent);white-space:nowrap">View passport <i class="fas fa-arrow-up-right-from-square" style="font-size:.68rem"></i></a>' +
+            '<button type="button" onclick="clearBorrower()" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1rem">&times;</button></div>';
+        document.getElementById('assessForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function clearBorrower() {
+        document.getElementById('returning_applicant_id').value = '';
+        document.getElementById('borrowerSearch').value = '';
+        document.getElementById('loadedBorrower').style.display = 'none';
+    }
+
+    // Close results when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#borrowerResults') && e.target.id !== 'borrowerSearch') {
+            const box = document.getElementById('borrowerResults');
+            if (box) box.style.display = 'none';
+        }
+    });
 
     document.addEventListener('DOMContentLoaded', () => {
         onEntityTypeChange();
