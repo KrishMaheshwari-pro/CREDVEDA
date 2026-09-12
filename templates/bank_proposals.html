@@ -68,6 +68,13 @@
                 <div style="font-size:.72rem;color:var(--bad);font-weight:600">
                     +{{ (p.proposed_rate - p.floor_rate)|round(2) }}% above floor
                 </div>
+                <div style="font-size:.72rem;margin-top:.2rem">
+                    {% if p.collateral_required %}
+                    <span style="color:#f59e0b"><i class="fas fa-lock" style="font-size:.68rem"></i> wants collateral</span>
+                    {% else %}
+                    <span style="color:var(--good)"><i class="fas fa-lock-open" style="font-size:.68rem"></i> unsecured</span>
+                    {% endif %}
+                </div>
             </div>
 
             <!-- Accept / Reject buttons -->

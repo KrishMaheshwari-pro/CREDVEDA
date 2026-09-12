@@ -1717,13 +1717,15 @@ def marketplace_listing_detail(listing_id):
         listing = dict(row)
 
         commitments = [dict(r) for r in conn.execute(
-            "SELECT interest_id, lender_username, committed_amount, proposed_rate, message, created_at "
+            "SELECT interest_id, lender_username, committed_amount, proposed_rate, message, "
+            "collateral_required, created_at "
             "FROM lender_interests WHERE listing_id=? AND status='active' ORDER BY created_at",
             (listing_id,)
         ).fetchall()]
 
         pending_proposals = [dict(r) for r in conn.execute(
-            "SELECT interest_id, lender_username, committed_amount, proposed_rate, message, created_at "
+            "SELECT interest_id, lender_username, committed_amount, proposed_rate, message, "
+            "collateral_required, created_at "
             "FROM lender_interests WHERE listing_id=? AND status='pending' ORDER BY created_at",
             (listing_id,)
         ).fetchall()]
@@ -1944,6 +1946,7 @@ def bank_proposals():
         proposals = [dict(r) for r in conn.execute("""
             SELECT li.interest_id, li.listing_id, li.lender_username,
                    li.committed_amount, li.proposed_rate, li.message, li.created_at,
+                   li.collateral_required,
                    ml.entity_type, ml.business_type, ml.applicant_id,
                    ml.interest_rate AS floor_rate, ml.amount_requested,
                    cs.credit_score

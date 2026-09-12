@@ -240,6 +240,13 @@
             <div style="font-size:.68rem; color:var(--muted); margin-top:.15rem;">
               {{ p.proposed_rate - floor | round(2) }}% above floor
             </div>
+            <div style="font-size:.68rem; margin-top:.15rem;">
+              {% if p.collateral_required %}
+              <span style="color:#f59e0b;"><i class="fas fa-lock"></i> collateral</span>
+              {% else %}
+              <span style="color:#22c55e;"><i class="fas fa-lock-open"></i> unsecured</span>
+              {% endif %}
+            </div>
           </div>
           <div style="display:flex; flex-direction:column; gap:.35rem; flex-shrink:0;">
             <form method="post" action="{{ url_for('marketplace_respond', listing_id=listing.listing_id, interest_id=p.interest_id) }}" style="margin:0;">

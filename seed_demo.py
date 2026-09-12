@@ -59,6 +59,18 @@ LISTINGS = [
             ("lender_priya",  52000, 11.5, 1),     # slightly above floor, secured -> pending
         ],
     },
+    {
+        "applicant_id": "APP-01981", "amount": 160000, "tenure": 36,
+        "purpose": "Working capital", "score": 846,
+        "entity_type": "Small Business", "business_type": "Repair & Local Services",
+        "geography_tier": "Tier 2", "floor": 11.5,
+        "bank_offer_rate": 15.0, "bank_collateral": 1,
+        "bank_collateral_detail": "Two-wheeler / equipment hypothecation",
+        "commitments": [
+            ("lender_ramesh", 80000, 11.5, 0),     # floor, unsecured -> active
+            ("lender_acme",   80000, 12.4, 1),     # above floor, secured -> pending (bank inbox)
+        ],
+    },
 ]
 
 
