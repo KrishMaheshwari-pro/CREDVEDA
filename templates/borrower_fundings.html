@@ -23,12 +23,83 @@
     {% else %}
 
     {% if chosen_option %}
-    <div style="display:flex;align-items:center;gap:10px;padding:.85rem 1.1rem;border-radius:10px;background:rgba(34,197,94,.1);border:1px solid #22c55e;margin-bottom:1.5rem;">
-        <i class="fas fa-circle-check" style="color:#22c55e;font-size:1.2rem;"></i>
-        <div>
-            <div style="font-weight:700;color:#22c55e;">You accepted the {{ 'bank direct offer' if chosen_option == 'bank' else 'marketplace co-funding offer' }}</div>
-            <div style="font-size:.82rem;color:var(--text-dim);">The bank will contact you to complete the paperwork and disburse the loan.</div>
+    {% set accepted = (offers | selectattr('type', 'equalto', chosen_option) | list | first) %}
+    <div style="border:1px solid #22c55e;border-radius:14px;background:var(--card);overflow:hidden;margin-bottom:1.75rem;">
+        <div style="display:flex;align-items:center;gap:10px;padding:.9rem 1.15rem;background:rgba(34,197,94,.1);border-bottom:1px solid rgba(34,197,94,.35);">
+            <i class="fas fa-circle-check" style="color:#22c55e;font-size:1.2rem;"></i>
+            <div>
+                <div style="font-weight:700;color:#22c55e;">You accepted the {{ 'bank direct offer' if chosen_option == 'bank' else 'marketplace co-funding offer' }}</div>
+                <div style="font-size:.82rem;color:var(--text-dim);">The bank will contact you to complete the paperwork and disburse the loan.</div>
+            </div>
         </div>
+
+        {% if accepted and accepted.funding %}
+        {% set f = accepted.funding %}
+        <div style="padding:1.15rem 1.15rem 1.3rem;">
+            <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);font-weight:700;margin-bottom:.9rem;">
+                How your ₹{{ '{:,.0f}'.format(f.asked) }} is being funded
+            </div>
+
+            <!-- fulfilled / remaining -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1rem;">
+                <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:.7rem .85rem;">
+                    <div style="font-size:.7rem;color:var(--text-faint);font-weight:600;">YOU ASKED FOR</div>
+                    <div style="font-size:1.2rem;font-weight:700;">₹{{ '{:,.0f}'.format(f.asked) }}</div>
+                </div>
+                <div style="background:rgba(34,197,94,.09);border:1px solid rgba(34,197,94,.35);border-radius:10px;padding:.7rem .85rem;">
+                    <div style="font-size:.7rem;color:#22c55e;font-weight:600;">FULFILLED</div>
+                    <div style="font-size:1.2rem;font-weight:700;color:#22c55e;">₹{{ '{:,.0f}'.format(f.funded) }}</div>
+                    <div style="font-size:.7rem;color:var(--text-dim);">{{ f.pct }}% of your request</div>
+                </div>
+                <div style="background:{{ 'rgba(245,158,11,.09)' if f.shortfall else 'var(--bg-soft)' }};
+                            border:1px solid {{ 'rgba(245,158,11,.4)' if f.shortfall else 'var(--border)' }};border-radius:10px;padding:.7rem .85rem;">
+                    <div style="font-size:.7rem;color:{{ '#f59e0b' if f.shortfall else 'var(--text-faint)' }};font-weight:600;">STILL TO ARRANGE</div>
+                    <div style="font-size:1.2rem;font-weight:700;color:{{ '#f59e0b' if f.shortfall else 'var(--text-dim)' }};">₹{{ '{:,.0f}'.format(f.remaining) }}</div>
+                    <div style="font-size:.7rem;color:var(--text-dim);">{{ 'Shortfall — bank will advise' if f.shortfall else 'Nothing left — fully covered' }}</div>
+                </div>
+            </div>
+
+            <div style="height:9px;border-radius:20px;background:var(--bg-soft);overflow:hidden;margin-bottom:1.25rem;">
+                <div style="height:100%;width:{{ f.pct }}%;background:linear-gradient(90deg,#22c55e,#4ade80);"></div>
+            </div>
+
+            <!-- every piece, and what it costs -->
+            <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);font-weight:700;margin-bottom:.6rem;">
+                {{ f.n_pieces }} {{ 'part' if f.n_pieces == 1 else 'parts' }} · interest rate on each
+            </div>
+            <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;{% if f.n_pieces > 6 %}max-height:320px;overflow-y:auto;{% endif %}">
+                {% for p in f.pieces %}
+                <div style="display:flex;align-items:center;gap:.75rem;padding:.65rem .85rem;
+                            {% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}
+                            background:{{ 'var(--bg-soft)' if loop.index0 % 2 else 'transparent' }};">
+                    <div style="width:26px;height:26px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
+                                background:#a855f722;color:#a855f7;font-size:.72rem;font-weight:700;">{{ loop.index }}</div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:600;font-size:.87rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ p.funder }}</div>
+                        <div style="font-size:.72rem;color:var(--text-dim);">
+                            {{ p.share }}% of your loan · {{ 'secured' if p.collateral else 'unsecured' }}
+                        </div>
+                    </div>
+                    <div style="text-align:right;flex:0 0 auto;">
+                        <div style="font-weight:700;font-size:.9rem;">₹{{ '{:,.0f}'.format(p.amount) }}</div>
+                        <div style="font-size:.78rem;font-weight:700;color:#4f8cff;">@ {{ p.rate }}% p.a.</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;
+                        margin-top:.85rem;padding-top:.85rem;border-top:1px dashed var(--border);font-size:.87rem;">
+                <span style="color:var(--text-dim);">
+                    Blended rate you actually pay
+                    {% if f.n_pieces > 1 %}<span style="color:var(--text-faint);font-size:.76rem;">(weighted by each part)</span>{% endif %}
+                </span>
+                <strong style="font-size:1.05rem;color:#22c55e;">{{ accepted.rate }}% p.a.{% if accepted.emi %}
+                    <span style="color:var(--text-dim);font-weight:500;font-size:.85rem;"> · ₹{{ '{:,.0f}'.format(accepted.emi) }}/mo</span>{% endif %}
+                </strong>
+            </div>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -85,6 +156,43 @@
                 <div style="font-size:.75rem;color:var(--text-dim);text-align:right;">{{ o.collateral_detail }}</div>
             </div>
 
+            {% if o.funding %}
+            {% set f = o.funding %}
+            <div style="margin-top:.9rem;border-top:1px solid var(--border);padding-top:.85rem;">
+                <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:.4rem;">
+                    <span style="color:var(--text-dim);">Covers your request</span>
+                    <strong style="color:{{ '#22c55e' if not f.shortfall else '#f59e0b' }};">{{ f.pct }}%</strong>
+                </div>
+                <div style="height:6px;border-radius:20px;background:var(--bg-soft);overflow:hidden;">
+                    <div style="height:100%;width:{{ f.pct }}%;background:{{ '#22c55e' if not f.shortfall else '#f59e0b' }};"></div>
+                </div>
+                <div style="font-size:.74rem;color:var(--text-dim);margin-top:.4rem;">
+                    ₹{{ '{:,.0f}'.format(f.funded) }} arranged{% if f.shortfall %} · ₹{{ '{:,.0f}'.format(f.remaining) }} short{% endif %}
+                </div>
+
+                {% if f.n_pieces > 1 %}
+                <details style="margin-top:.6rem;">
+                    <summary style="cursor:pointer;font-size:.78rem;color:var(--accent);font-weight:600;list-style:revert;">
+                        Split across {{ f.n_pieces }} lenders — see each rate
+                    </summary>
+                    <div style="margin-top:.5rem;font-size:.78rem;line-height:1.9;">
+                        {% for p in f.pieces %}
+                        <div style="display:flex;justify-content:space-between;gap:.5rem;">
+                            <span style="color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ p.funder }}</span>
+                            <span style="flex:0 0 auto;">₹{{ '{:,.0f}'.format(p.amount) }}
+                                <strong style="color:#4f8cff;">@ {{ p.rate }}%</strong></span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+                {% else %}
+                <div style="font-size:.74rem;color:var(--text-dim);margin-top:.35rem;">
+                    Single funder — one rate on the whole loan
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <div style="margin-top:1.1rem;">
             {% if is_chosen %}
                 <button disabled style="width:100%;padding:.65rem;border-radius:9px;border:none;background:#22c55e;color:#fff;font-weight:700;font-size:.85rem;">
@@ -100,7 +208,7 @@
                 </button>
             {% else %}
                 <div style="display:flex;gap:.6rem;">
-                    <button onclick="confirmAccept('{{ o.type }}', '{{ o.name }}', '{{ o.rate }}')"
+                    <button onclick="confirmAccept('{{ o.type }}', {{ o.name|tojson }}, '{{ o.rate }}', {{ (o.funding or {})|tojson }})"
                             style="flex:1;padding:.65rem;border-radius:9px;border:none;background:#22c55e;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;">
                         <i class="fas fa-check"></i> Accept
                     </button>
@@ -121,18 +229,20 @@
     {% endif %}
 </div>
 
-<!-- Confirmation modal -->
-<div id="confirmModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.55);
-     align-items:center;justify-content:center;padding:1rem;">
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:420px;width:100%;padding:1.6rem;box-shadow:0 20px 60px rgba(0,0,0,.4);">
+<!-- Confirmation modal. Backgrounds carry an explicit fallback: a single
+     undefined token here renders the whole panel transparent and the page
+     text behind it bleeds straight through the dialog copy. -->
+<div id="confirmModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(3,7,14,.72);
+     backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:1rem;">
+    <div style="background:var(--card,#131a24);border:1px solid var(--border,#243044);border-radius:14px;max-width:420px;width:100%;padding:1.6rem;box-shadow:0 20px 60px rgba(0,0,0,.55);">
         <div id="modalIcon" style="font-size:2rem;margin-bottom:.75rem;"></div>
-        <h3 id="modalTitle" style="margin:0 0 .5rem;font-size:1.2rem;"></h3>
-        <p id="modalBody" style="color:var(--text-dim);font-size:.9rem;line-height:1.6;margin-bottom:1.4rem;"></p>
+        <h3 id="modalTitle" style="margin:0 0 .5rem;font-size:1.2rem;color:var(--text,#e9eff8);"></h3>
+        <p id="modalBody" style="color:var(--text-dim,#93a4bb);font-size:.9rem;line-height:1.6;margin-bottom:1.4rem;"></p>
         <form method="post" id="modalForm" style="display:flex;gap:.7rem;">
             <input type="hidden" name="action" id="modalAction">
             <input type="hidden" name="option" id="modalOption">
             <button type="button" onclick="closeModal()"
-                    style="flex:1;padding:.65rem;border-radius:9px;border:1px solid var(--border);background:var(--bg-soft);color:var(--text);font-weight:600;cursor:pointer;">
+                    style="flex:1;padding:.65rem;border-radius:9px;border:1px solid var(--border,#243044);background:var(--bg-soft,#0f141c);color:var(--text,#e9eff8);font-weight:600;cursor:pointer;">
                 Cancel
             </button>
             <button type="submit" id="modalConfirm"
@@ -148,13 +258,48 @@
     function openModal() { document.getElementById('confirmModal').style.display = 'flex'; }
     function closeModal() { document.getElementById('confirmModal').style.display = 'none'; }
 
-    function confirmAccept(type, name, rate) {
+    const rupee = n => '₹' + Math.round(n).toLocaleString('en-IN');
+
+    function confirmAccept(type, name, rate, funding) {
         document.getElementById('modalForm').action = ACTION_URL;
         document.getElementById('modalAction').value = 'accept';
         document.getElementById('modalOption').value = type;
         document.getElementById('modalIcon').innerHTML = '<i class="fas fa-circle-check" style="color:#22c55e;"></i>';
         document.getElementById('modalTitle').textContent = 'Accept ' + name + '?';
-        document.getElementById('modalBody').textContent = 'You are accepting this offer at ' + rate + '% p.a. This is final and the bank will be notified to finalise your loan. The other offer will be closed.';
+
+        // Spell out what the borrower actually gets before they commit: how
+        // much of the request this covers, what is left, and the rate on each
+        // part -- a co-funded loan can be many slices at different rates.
+        let summary = '';
+        if (funding && funding.asked) {
+            const parts = funding.n_pieces > 1
+                ? `<div style="margin-top:.55rem;font-size:.8rem;line-height:1.75;">`
+                  + funding.pieces.map((p, i) =>
+                      `<div style="display:flex;justify-content:space-between;gap:.5rem;">
+                         <span style="color:var(--text-dim,#93a4bb);">${i + 1}. ${p.funder}</span>
+                         <span>${rupee(p.amount)} <strong style="color:#4f8cff;">@ ${p.rate}%</strong></span>
+                       </div>`).join('')
+                  + `</div>`
+                : '';
+            summary =
+                `<div style="background:var(--bg-soft,#0f141c);border:1px solid var(--border,#243044);
+                             border-radius:10px;padding:.75rem .85rem;margin-bottom:1rem;font-size:.85rem;">
+                   <div style="display:flex;justify-content:space-between;">
+                     <span style="color:var(--text-dim,#93a4bb);">You asked for</span>
+                     <strong>${rupee(funding.asked)}</strong></div>
+                   <div style="display:flex;justify-content:space-between;">
+                     <span style="color:var(--text-dim,#93a4bb);">Fulfilled by this offer</span>
+                     <strong style="color:#22c55e;">${rupee(funding.funded)} (${funding.pct}%)</strong></div>
+                   <div style="display:flex;justify-content:space-between;">
+                     <span style="color:var(--text-dim,#93a4bb);">Still to arrange</span>
+                     <strong style="color:${funding.shortfall ? '#f59e0b' : 'inherit'};">${rupee(funding.remaining)}</strong></div>
+                   ${parts}
+                 </div>`;
+        }
+        document.getElementById('modalBody').innerHTML = summary +
+            'You are accepting this offer at <strong>' + rate + '% p.a.</strong> This is final and the bank ' +
+            'will be notified to finalise your loan. The other offer will be closed.';
+
         const c = document.getElementById('modalConfirm');
         c.style.background = '#22c55e'; c.textContent = 'Yes, accept';
         openModal();

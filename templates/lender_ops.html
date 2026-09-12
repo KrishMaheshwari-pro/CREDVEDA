@@ -200,47 +200,26 @@
         </div>
         <div style="padding:.5rem 1rem 1rem">
             {% for v in verify_items %}
-            <div style="border:1px solid var(--border);border-radius:10px;padding:1rem;margin-top:.75rem;background:var(--bg-soft)">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap">
-                    <div style="min-width:200px">
-                        <div style="font-weight:700">{{ v.applicant_id }}
-                            <span style="font-weight:400;color:var(--text-dim);font-size:.85em">· {{ v.business_type or v.entity_type }}</span>
-                        </div>
-                        <div style="font-size:.85em;color:var(--text-dim);margin-top:.25rem">
-                            ₹{{ "{:,.0f}".format(v.requested_amount or 0) }} ·
-                            score <span style="color:var(--text-dim)">{{ v.declared_score }}</span>
-                            <i class="fas fa-arrow-right" style="font-size:.7em;margin:0 3px"></i>
-                            <span style="color:var(--bad);font-weight:700">{{ v.effective_score }}</span>
-                            <span style="color:var(--bad)">(−{{ v.penalty }} unverified)</span>
-                        </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+                        border:1px solid var(--border);border-radius:10px;padding:.85rem 1rem;margin-top:.7rem;background:var(--bg-soft)">
+                <div style="min-width:200px">
+                    <div style="font-weight:700">{{ v.applicant_id }}
+                        <span style="font-weight:400;color:var(--text-dim);font-size:.85em">· {{ v.business_type or v.entity_type }}</span>
+                    </div>
+                    <div style="font-size:.85em;color:var(--text-dim);margin-top:.25rem">
+                        ₹{{ "{:,.0f}".format(v.requested_amount or 0) }} ·
+                        score <span style="color:var(--text-dim)">{{ v.declared_score }}</span>
+                        <i class="fas fa-arrow-right" style="font-size:.7em;margin:0 3px"></i>
+                        <span style="color:var(--bad);font-weight:700">{{ v.effective_score }}</span>
+                        <span style="color:var(--bad)">(−{{ v.penalty }} unverified)</span>
+                    </div>
+                    <div style="font-size:.78rem;color:var(--text-dim);margin-top:.25rem">
+                        <i class="fas fa-triangle-exclamation" style="color:var(--warn)"></i> To verify: {{ v.unverified or '—' }}
                     </div>
                 </div>
-
-                <form method="post" action="{{ url_for('verify_and_list', vq_id=v.vq_id) }}" style="margin:.85rem 0 0">
-                    <div style="font-size:.8rem;color:var(--text-dim);margin-bottom:.4rem">
-                        <i class="fas fa-clipboard-check"></i> Officer verified (borrower provided proof) — tick what's confirmed, then list:
-                    </div>
-                    <div style="display:flex;flex-wrap:wrap;gap:.75rem 1.25rem;margin-bottom:.85rem">
-                        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
-                            <input type="checkbox" name="verify_income" checked style="width:16px;height:16px;accent-color:var(--good)"> Income
-                        </label>
-                        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
-                            <input type="checkbox" name="verify_emi" checked style="width:16px;height:16px;accent-color:var(--good)"> Existing EMIs
-                        </label>
-                        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
-                            <input type="checkbox" name="verify_gst" checked style="width:16px;height:16px;accent-color:var(--good)"> GST
-                        </label>
-                        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
-                            <input type="checkbox" name="verify_utility" checked style="width:16px;height:16px;accent-color:var(--good)"> Utility
-                        </label>
-                    </div>
-                    <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
-                        <button type="submit" class="btn btn-primary" style="background:var(--good);border-color:var(--good)">
-                            <i class="fas fa-circle-check"></i> Verify &amp; list on marketplace
-                        </button>
-                        <span style="font-size:.78rem;color:var(--text-dim)">Flagged: {{ v.unverified or '—' }}</span>
-                    </div>
-                </form>
+                <a href="{{ url_for('apply_page', vq=v.vq_id) }}" class="btn btn-primary" style="white-space:nowrap">
+                    <i class="fas fa-folder-open"></i> Open &amp; verify
+                </a>
             </div>
             {% endfor %}
         </div>

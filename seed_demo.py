@@ -29,6 +29,16 @@ DEMO_USERS = [
     ("lender_ramesh", "demo1234", "lender"),
     ("lender_priya",  "demo1234", "lender"),
     ("lender_acme",   "demo1234", "lender"),
+    # Small lenders, for the many-pieces listing below. A co-funded loan can be
+    # split across any number of them, each at its own rate, and the borrower
+    # needs to see every slice -- two lenders never showed that off properly.
+    ("lender_meera",  "demo1234", "lender"),
+    ("lender_arjun",  "demo1234", "lender"),
+    ("lender_fatima", "demo1234", "lender"),
+    ("lender_vikram", "demo1234", "lender"),
+    ("lender_nitin",  "demo1234", "lender"),
+    ("lender_sunita", "demo1234", "lender"),
+    ("lender_kabir",  "demo1234", "lender"),
 ]
 
 # Two borrowers to list. Each: (applicant_id, amount, tenure, purpose, floor,
@@ -69,6 +79,31 @@ LISTINGS = [
         "commitments": [
             ("lender_ramesh", 80000, 11.5, 0),     # floor, unsecured -> active
             ("lender_acme",   80000, 12.4, 1),     # above floor, secured -> pending (bank inbox)
+        ],
+    },
+    {
+        # The many-pieces showcase. Both options cover the full ₹2.5L, but the
+        # bank does it as one loan at one rate while the marketplace does it as
+        # ten slices at ten different rates -- which is exactly what the
+        # borrower's funding breakdown is there to make legible. Every rate is
+        # at or under the floor, so all ten land as active commitments.
+        "applicant_id": "APP-00183", "amount": 250000, "tenure": 36,
+        "purpose": "Inventory & working capital", "score": 810,
+        "entity_type": "Small Business", "business_type": "Wholesale Trading",
+        "geography_tier": "Tier 1", "floor": 13.0,
+        "bank_offer_rate": 15.75, "bank_collateral": 1,
+        "bank_collateral_detail": "Stock hypothecation + personal guarantee",
+        "commitments": [
+            ("lender_meera",  40000, 11.40, 0),
+            ("lender_ramesh", 35000, 11.75, 0),
+            ("lender_priya",  32000, 12.00, 0),
+            ("lender_acme",   30000, 12.10, 0),
+            ("lender_arjun",  28000, 12.25, 0),
+            ("lender_fatima", 25000, 12.40, 0),
+            ("lender_vikram", 22000, 12.55, 1),
+            ("lender_nitin",  18000, 12.70, 0),
+            ("lender_sunita", 12000, 12.85, 0),
+            ("lender_kabir",   8000, 13.00, 1),
         ],
     },
 ]

@@ -679,6 +679,23 @@ BUSINESS_TYPE_CHOICES = config.BUSINESS_TYPES_BY_ENTITY
 def apply_page():
     result = None
     form_values = {}
+    from_vq = None
+
+    # Opened from the verification queue: pre-fill the form with everything the
+    # borrower originally submitted so the officer can edit values/verification,
+    # re-compute the score, and list — no re-entering.
+    if request.method == "GET" and request.args.get("vq"):
+        conn = get_db_connection()
+        try:
+            _ensure_verification_table(conn)
+            row = conn.execute("SELECT applicant_id, form_data FROM verification_queue WHERE vq_id=?",
+                               (request.args.get("vq"),)).fetchone()
+        finally:
+            conn.close()
+        if row and row["form_data"]:
+            form_values = json.loads(row["form_data"])
+            form_values["returning_applicant_id"] = row["applicant_id"]
+            from_vq = row["applicant_id"]
 
     if request.method == "POST":
         f = request.form
@@ -816,6 +833,7 @@ def apply_page():
         marketplace_min_score=config.MARKETPLACE_MIN_SCORE,
         matched_products=matched_products[:3],
         draft_id=draft_id,
+        from_vq=from_vq,
     )
 
 
@@ -1167,51 +1185,6 @@ def _score_and_list_from_form(f, listed_by, applicant_id=None):
         conn.close()
 
     return listing_id
-
-
-@app.route("/verification/<vq_id>/verify-and-list", methods=["POST"])
-@login_required
-def verify_and_list(vq_id):
-    """Bank confirms the flagged data (borrower brought documents) and lists in
-    one step — no re-entering the form. The officer ticks which items are now
-    verified; those sources are flipped to 'verified', the file is re-scored,
-    and if it now clears the bar it's listed on the marketplace."""
-    conn = get_db_connection()
-    item = None
-    try:
-        _ensure_verification_table(conn)
-        row = conn.execute("SELECT * FROM verification_queue WHERE vq_id=?", (vq_id,)).fetchone()
-        item = dict(row) if row else None
-    finally:
-        conn.close()
-    if not item or not item.get("form_data"):
-        return redirect(url_for("lender_ops"))
-
-    data = json.loads(item["form_data"])
-    # Apply the officer's verification ticks (default: verify everything).
-    if request.form.get("verify_income", "on") == "on":
-        data["src_income_digital"] = "verified"
-        data["src_income_cash"] = "verified"
-    if request.form.get("verify_emi", "on") == "on":
-        data["src_emi"] = "verified"
-    if request.form.get("verify_gst", "on") == "on":
-        data["src_gst"] = "verified"
-    if request.form.get("verify_utility", "on") == "on":
-        data["src_utility"] = "verified"
-
-    listing_id = _score_and_list_from_form(data, session.get("username"),
-                                           applicant_id=item["applicant_id"])
-    # Mark the queue item resolved either way; if it listed, send them to it.
-    conn = get_db_connection()
-    try:
-        conn.execute("UPDATE verification_queue SET status=? WHERE vq_id=?",
-                     ("listed" if listing_id else "reviewed", vq_id))
-        conn.commit()
-    finally:
-        conn.close()
-    if listing_id:
-        return redirect(url_for("marketplace_listing_detail", listing_id=listing_id))
-    return redirect(url_for("lender_ops", reviewed=item["applicant_id"]))
 
 
 # --- Fairness / Responsible AI report -----------------------------------------
@@ -2116,8 +2089,29 @@ def _financing_offers(listing, commitments, blended_rate):
     rejected = set((listing.get("rejected_options") or "").split(",")) - {""}
     amt = float(listing.get("amount_requested") or 0)
     tenure = listing.get("tenure_months") or 24
+
+    def _fulfilment(funded, pieces):
+        """How much of what the borrower asked for this option actually covers,
+        and the rate on each individual piece. A co-funded loan can be split
+        across any number of lenders at different rates, and the borrower was
+        only ever shown the single blended number -- so they could not see
+        which slice of their money cost what, nor how much was still short."""
+        return {
+            "asked": amt,
+            "funded": funded,
+            "remaining": max(0.0, amt - funded),
+            "pct": min(100, round(funded / amt * 100)) if amt else 0,
+            "shortfall": amt - funded > 1,
+            "pieces": pieces,
+            "n_pieces": len(pieces),
+        }
+
     if listing.get("bank_offer_rate"):
         br = float(listing["bank_offer_rate"])
+        bank_pieces = [{
+            "funder": "Listing bank", "amount": amt, "rate": round(br, 2),
+            "share": 100.0, "collateral": bool(listing.get("bank_offer_collateral", 1)),
+        }]
         offers.append({
             "type": "bank", "name": "Bank direct loan", "funder": "Listing bank",
             "rate": round(br, 2),
@@ -2126,11 +2120,23 @@ def _financing_offers(listing, commitments, blended_rate):
             "emi": round(scoring.emi(amt, tenure, br / 100)) if amt else None,
             "amount": amt, "n_funders": 1, "available": True,
             "rejected": "bank" in rejected,
+            "funding": _fulfilment(amt, bank_pieces),
         })
     if commitments:
         mr = float(blended_rate or listing.get("interest_rate") or 12.0)
         any_collateral = any(c.get("collateral_required") for c in commitments)
         committed = float(listing.get("total_committed") or 0)
+        pieces = []
+        for c in commitments:
+            camt = float(c.get("committed_amount") or 0)
+            pieces.append({
+                "funder": c.get("lender_username") or "Lender",
+                "amount": camt,
+                "rate": round(float(c.get("proposed_rate") or mr), 2),
+                "share": round(camt / amt * 100, 1) if amt else 0,
+                "collateral": bool(c.get("collateral_required")),
+            })
+        pieces.sort(key=lambda p: p["amount"], reverse=True)
         offers.append({
             "type": "marketplace", "name": "Marketplace co-funding",
             "funder": f"{len(commitments)} lender" + ("s" if len(commitments) != 1 else ""),
@@ -2141,6 +2147,7 @@ def _financing_offers(listing, commitments, blended_rate):
             "amount": committed, "n_funders": len(commitments),
             "available": committed >= amt and amt > 0,
             "rejected": "marketplace" in rejected,
+            "funding": _fulfilment(committed, pieces),
         })
     avail = [o for o in offers if o["available"] and not o["rejected"]]
     if avail:

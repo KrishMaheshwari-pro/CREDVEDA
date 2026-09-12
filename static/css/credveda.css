@@ -39,6 +39,17 @@
     --bad:           #ef4444;
     --bad-soft:      rgba(239, 68, 68, 0.12);
 
+    /* Panel surface for cards, dropdowns and modals. Same story as --accent
+       above: referenced by a dozen templates but never defined, so
+       `background: var(--card)` was invalid-at-computed-value-time and fell
+       back to transparent -- which is why the accept/reject confirmation
+       modal rendered see-through with the page bleeding through its text.
+       --input-bg and --muted were dangling for the same reason. */
+    --card:          #131a24;
+    --card-2:        #1a232f;
+    --input-bg:      #0f141c;
+    --muted:         #93a4bb;
+
     --radius:        14px;
     --radius-sm:     9px;
     --radius-lg:     20px;
@@ -82,6 +93,11 @@
     --warn-soft:     rgba(180, 83, 9, 0.10);
     --bad:           #b91c1c;
     --bad-soft:      rgba(185, 28, 28, 0.10);
+
+    --card:          #ffffff;
+    --card-2:        #f4f7fb;
+    --input-bg:      #ffffff;
+    --muted:         #55647a;
 
     --shadow:        0 1px 2px rgba(15,27,45,.06), 0 8px 24px rgba(15,27,45,.06);
     --shadow-lg:     0 24px 60px rgba(15,27,45,.12);
@@ -189,6 +205,18 @@ small { font-size: .8125rem; }
 }
 .nav-links a:hover { background: var(--surface-2); color: var(--text); }
 .nav-links a.active { background: var(--brand-soft); color: var(--brand); }
+
+/* A link styled as a button inside the navbar. `.nav-links a` is specificity
+   0-1-1 and `.btn-primary` only 0-1-0, so the nav's dim link colour beat the
+   button's white text and the "Bank / Lender sign in" pill rendered as
+   low-contrast grey-on-blue. These rules match the nav's specificity so the
+   button keeps its own palette, hover included. */
+.nav-links a.btn { padding: 7px 13px; font-weight: 600; }
+.nav-links a.btn-primary,
+.nav-links a.btn-primary:hover { background: var(--brand); color: #fff; }
+.nav-links a.btn-primary:hover { background: var(--brand-hi); }
+.nav-links a.btn-ghost,
+.nav-links a.btn-ghost:hover { background: var(--surface); color: var(--text); }
 .nav-actions { display: flex; align-items: center; gap: 8px; }
 
 .icon-btn {
@@ -505,6 +533,107 @@ table.table td.strong { color: var(--text); font-weight: 600; }
     .container, .container-narrow { padding: 0 16px; }
     .card { padding: 17px; }
     .footer-grid { grid-template-columns: 1fr; gap: 22px; }
+}
+
+/* ==========================================================================
+   Motion & micro-interactions layer
+   Added globally so every page gains consistent polish: content fades up on
+   load, cards lift on hover, buttons spring, inputs get a soft focus ring.
+   All of it is disabled under prefers-reduced-motion.
+   ========================================================================== */
+
+@keyframes cv-fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes cv-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+@keyframes cv-pop {
+    0%   { transform: scale(.96); opacity: 0; }
+    60%  { transform: scale(1.01); }
+    100% { transform: scale(1); opacity: 1; }
+}
+@keyframes cv-bar-grow {
+    from { width: 0 !important; }
+}
+@keyframes cv-spin { to { transform: rotate(360deg); } }
+
+/* Page content eases in. Cards inside main content stagger slightly so a page
+   assembles itself rather than snapping in all at once. */
+main .container > *,
+.page .container > *,
+.container > .card,
+.container > .grid,
+.container > section {
+    animation: cv-fade-up .45s cubic-bezier(.22,.61,.36,1) both;
+}
+.container > *:nth-child(2) { animation-delay: .04s; }
+.container > *:nth-child(3) { animation-delay: .08s; }
+.container > *:nth-child(4) { animation-delay: .12s; }
+.container > *:nth-child(5) { animation-delay: .16s; }
+
+/* Cards: gentle lift + brighter border on hover. Interactive ones (inside an
+   <a>, or with .card-hover) lift more and show the pointer. */
+.card { transition: transform .18s cubic-bezier(.22,.61,.36,1), box-shadow .18s, border-color .18s; }
+a > .card, .card-hover { cursor: pointer; }
+a:hover > .card, .card-hover:hover {
+    transform: translateY(-3px);
+    border-color: var(--brand-line);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Stat tiles breathe on hover too. */
+.stat { transition: transform .18s, border-color .18s, box-shadow .18s; }
+.stat:hover { transform: translateY(-2px); border-color: var(--brand-line); box-shadow: var(--shadow); }
+
+/* Buttons: spring up on hover, press down on click, subtle shadow. */
+.btn { transition: transform .14s cubic-bezier(.34,1.56,.64,1), background .15s, border-color .15s, color .15s, box-shadow .15s; }
+.btn-primary:hover, .btn-lg:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(79,140,255,.28); }
+.btn:active { transform: translateY(0) scale(.985); }
+
+/* Inputs & selects: soft focus ring that animates in. */
+.input, .select, .form-control, textarea.form-control {
+    transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.input:focus, .select:focus, .form-control:focus, textarea:focus {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+/* Chips / badges settle in with a tiny pop. */
+.chip { transition: transform .15s, background .15s; }
+
+/* Progress / funding bars animate their fill on first paint. */
+.fund-bar, .dvi-bar-fill, .confidence-bar-fill, .gauge-fill {
+    animation: cv-bar-grow .9s cubic-bezier(.22,.61,.36,1) both;
+}
+
+/* Modal / overlay fade (used by the borrower confirm dialog). */
+#confirmModal { animation: cv-fade-in .2s ease both; }
+#confirmModal > div { animation: cv-pop .28s cubic-bezier(.34,1.56,.64,1) both; }
+
+/* Dropdown menus ease open. */
+.nav-dd:hover .nav-dd-menu { animation: cv-fade-up .16s ease both; }
+
+/* Search result rows & list items fade in as they render. */
+#borrowerResults > *, .borrower-hit { animation: cv-fade-in .18s ease both; }
+
+/* A reusable spinner utility for any async affordance. */
+.cv-spinner {
+    display: inline-block; width: 1em; height: 1em; vertical-align: -.15em;
+    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+    animation: cv-spin .6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+    }
 }
 
 
