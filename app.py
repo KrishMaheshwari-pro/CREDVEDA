@@ -90,6 +90,12 @@ def init_user_db():
             "ALTER TABLE marketplace_listings ADD COLUMN borrower_phone TEXT",
             "ALTER TABLE lender_interests ADD COLUMN proposed_rate REAL",
             "ALTER TABLE lender_interests ADD COLUMN message TEXT",
+            "ALTER TABLE lender_interests ADD COLUMN collateral_required INTEGER DEFAULT 0",
+            "ALTER TABLE marketplace_listings ADD COLUMN bank_offer_rate REAL",
+            "ALTER TABLE marketplace_listings ADD COLUMN bank_offer_collateral INTEGER DEFAULT 1",
+            "ALTER TABLE marketplace_listings ADD COLUMN bank_offer_collateral_detail TEXT",
+            "ALTER TABLE marketplace_listings ADD COLUMN chosen_option TEXT",
+            "ALTER TABLE marketplace_listings ADD COLUMN rejected_options TEXT",
         ]:
             try:
                 conn.execute(stmt)
@@ -350,6 +356,7 @@ def borrower_portal():
     error = None
     if request.method == "POST":
         app_id = (request.form.get("applicant_id") or "").strip().upper()
+        goto = request.form.get("goto", "passport")   # 'passport' | 'fundings'
         if not app_id:
             error = "Please enter your Applicant ID."
         else:
@@ -360,11 +367,10 @@ def borrower_portal():
                 ).fetchone()
             finally:
                 conn.close()
-            if row:
-                return redirect(url_for("credit_passport", applicant_id=app_id))
-            # Also check portfolio_df
-            if not portfolio_df.empty and app_id in set(portfolio_df["applicant_id"]):
-                return redirect(url_for("credit_passport", applicant_id=app_id))
+            found = bool(row) or (not portfolio_df.empty and app_id in set(portfolio_df["applicant_id"]))
+            if found:
+                dest = "borrower_fundings" if goto == "fundings" else "credit_passport"
+                return redirect(url_for(dest, applicant_id=app_id))
             error = f"No application found for ID '{app_id}'. Check with your loan officer."
     return render_template("borrower_portal.html", error=error)
 
@@ -1119,6 +1125,13 @@ def save_and_list():
     geography_tier = f.get("geography_tier", "Tier 2")
     business_type = f.get("business_type", "")
 
+    # Bank's own competing direct offer + collateral policy.
+    bank_direct = f.get("bank_direct_offer") == "on"
+    bank_offer_rate = (min(32.0, max(8.5, num("bank_offer_rate", floor_rate + 3.5)))
+                       if bank_direct else None)
+    bank_offer_collateral = 1 if (bank_direct and f.get("bank_offer_collateral", "1") == "1") else 0
+    bank_offer_collateral_detail = (f.get("bank_offer_collateral_detail") or "").strip()[:200]
+
     conn = get_db_connection()
     try:
         conn.execute("""
@@ -1144,14 +1157,16 @@ def save_and_list():
             INSERT INTO marketplace_listings
             (listing_id, applicant_id, listed_by, listed_at, amount_requested, tenure_months,
              credit_score, tier_label, entity_type, business_type, geography_tier, purpose,
-             status, total_committed, interest_rate, borrower_email, borrower_phone)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'open',0,?,?,?)
+             status, total_committed, interest_rate, borrower_email, borrower_phone,
+             bank_offer_rate, bank_offer_collateral, bank_offer_collateral_detail)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'open',0,?,?,?,?,?,?)
         """, (listing_id, applicant_id, session.get("username"),
               datetime.now(timezone.utc).isoformat(),
               requested_loan_amount, requested_tenure_months,
               result["credit_score"], tier_label,
               entity_type, business_type, geography_tier,
-              purpose, interest_rate, borrower_email, borrower_phone))
+              purpose, interest_rate, borrower_email, borrower_phone,
+              bank_offer_rate, bank_offer_collateral, bank_offer_collateral_detail))
         conn.commit()
     finally:
         conn.close()
@@ -1770,6 +1785,7 @@ def marketplace_commit(listing_id):
         amount = float(request.form.get("amount", 0) or 0)
         proposed_rate = request.form.get("proposed_rate", "")
         message = (request.form.get("message") or "").strip()[:300]
+        collateral_required = 1 if request.form.get("collateral_required") == "1" else 0
         if amount <= 0:
             return redirect(url_for("marketplace_listing_detail", listing_id=listing_id))
 
@@ -1792,10 +1808,11 @@ def marketplace_commit(listing_id):
         interest_id = str(uuid.uuid4())[:12]
         conn.execute("""
             INSERT INTO lender_interests
-            (interest_id, listing_id, lender_username, committed_amount, proposed_rate, message, status, created_at)
-            VALUES (?,?,?,?,?,?,?,?)
+            (interest_id, listing_id, lender_username, committed_amount, proposed_rate, message,
+             collateral_required, status, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
         """, (interest_id, listing_id, session.get("username"), amount, p_rate, message,
-              commit_status, datetime.now(timezone.utc).isoformat()))
+              collateral_required, commit_status, datetime.now(timezone.utc).isoformat()))
 
         # Only count active (accepted) commitments toward total
         active_total = float(conn.execute(
@@ -2045,6 +2062,86 @@ Rules: Answer in 3-5 clear sentences. Use ₹ for amounts. No ML jargon. If aske
                         "debug": str(exc)})
 
 
+def _financing_offers(listing, commitments, blended_rate):
+    """Builds the borrower's competing financing options: the bank's own direct
+    loan (usually pricier, collateral-backed) vs the marketplace of lenders
+    (competing on rate, collateral optional). Same score, same loan — the
+    borrower picks the terms. Shared by the passport and the fundings page."""
+    offers = []
+    if not listing:
+        return offers
+    rejected = set((listing.get("rejected_options") or "").split(",")) - {""}
+    amt = float(listing.get("amount_requested") or 0)
+    tenure = listing.get("tenure_months") or 24
+    if listing.get("bank_offer_rate"):
+        br = float(listing["bank_offer_rate"])
+        offers.append({
+            "type": "bank", "name": "Bank direct loan", "funder": "Listing bank",
+            "rate": round(br, 2),
+            "collateral": bool(listing.get("bank_offer_collateral", 1)),
+            "collateral_detail": listing.get("bank_offer_collateral_detail") or "Standard security / hypothecation",
+            "emi": round(scoring.emi(amt, tenure, br / 100)) if amt else None,
+            "amount": amt, "n_funders": 1, "available": True,
+            "rejected": "bank" in rejected,
+        })
+    if commitments:
+        mr = float(blended_rate or listing.get("interest_rate") or 12.0)
+        any_collateral = any(c.get("collateral_required") for c in commitments)
+        committed = float(listing.get("total_committed") or 0)
+        offers.append({
+            "type": "marketplace", "name": "Marketplace co-funding",
+            "funder": f"{len(commitments)} lender" + ("s" if len(commitments) != 1 else ""),
+            "rate": round(mr, 2),
+            "collateral": any_collateral,
+            "collateral_detail": "Some lenders require collateral" if any_collateral else "Unsecured — no collateral",
+            "emi": round(scoring.emi(amt, tenure, mr / 100)) if amt else None,
+            "amount": committed, "n_funders": len(commitments),
+            "available": committed >= amt and amt > 0,
+            "rejected": "marketplace" in rejected,
+        })
+    avail = [o for o in offers if o["available"] and not o["rejected"]]
+    if avail:
+        min(avail, key=lambda o: o["rate"])["recommended"] = True
+    return offers
+
+
+def _borrower_listing_offers(applicant_id):
+    """Loads the borrower's active listing, its active commitments and the
+    computed offers — the data the fundings page needs."""
+    conn = get_db_connection()
+    listing, commitments, blended_rate = None, [], None
+    if conn:
+        try:
+            row = conn.execute(
+                "SELECT * FROM marketplace_listings WHERE applicant_id=? ORDER BY listed_at DESC LIMIT 1",
+                (applicant_id,)
+            ).fetchone()
+            if row:
+                listing = dict(row)
+                commitments = [dict(r) for r in conn.execute(
+                    "SELECT lender_username, committed_amount, proposed_rate, collateral_required, created_at "
+                    "FROM lender_interests WHERE listing_id=? AND status='active' ORDER BY created_at",
+                    (listing["listing_id"],)
+                ).fetchall()]
+                blended_rate = listing.get("blended_rate") or listing.get("interest_rate")
+        finally:
+            conn.close()
+    return listing, commitments, blended_rate, _financing_offers(listing, commitments, blended_rate)
+
+
+@app.route("/fundings/<applicant_id>")
+def borrower_fundings(applicant_id):
+    """Borrower-facing page listing every financing offer for their loan, with
+    accept / reject controls. Public — reached from the borrower portal."""
+    listing, commitments, blended_rate, offers = _borrower_listing_offers(applicant_id)
+    if not listing:
+        return render_template("borrower_fundings.html", applicant_id=applicant_id,
+                               listing=None, offers=[], chosen_option=None)
+    return render_template("borrower_fundings.html",
+                           applicant_id=applicant_id, listing=listing, offers=offers,
+                           chosen_option=listing.get("chosen_option"))
+
+
 # --- Credit Passport (public — no login) -------------------------------------
 @app.route("/passport/<applicant_id>")
 def credit_passport(applicant_id):
@@ -2074,8 +2171,8 @@ def credit_passport(applicant_id):
             if row:
                 listing = dict(row)
                 commitments = [dict(r) for r in conn.execute(
-                    "SELECT lender_username, committed_amount, proposed_rate, created_at FROM lender_interests "
-                    "WHERE listing_id=? AND status='active' ORDER BY created_at",
+                    "SELECT lender_username, committed_amount, proposed_rate, collateral_required, created_at "
+                    "FROM lender_interests WHERE listing_id=? AND status='active' ORDER BY created_at",
                     (listing["listing_id"],)
                 ).fetchall()]
                 # Offers still waiting on the bank, and ones it turned down.
@@ -2125,12 +2222,16 @@ def credit_passport(applicant_id):
             "n_pending": len(pending_commitments),
         }
 
+    offers = _financing_offers(listing, commitments, blended_rate)
+
     return render_template("credit_passport.html",
                            applicant_id=applicant_id,
                            result=result,
                            raw=raw,
                            listing=listing,
                            commitments=commitments,
+                           offers=offers,
+                           chosen_option=(listing.get("chosen_option") if listing else None),
                            blended_rate=blended_rate,
                            emi_monthly=emi_monthly,
                            matched_products=matched_products[:3],
@@ -2143,6 +2244,39 @@ def credit_passport(applicant_id):
                            funding=funding,
                            score_min=config.SCORE_MIN, score_max=config.SCORE_MAX,
                            approval_threshold=config.APPROVAL_SCORE_THRESHOLD)
+
+
+@app.route("/fundings/<applicant_id>/action", methods=["POST"])
+def borrower_offer_action(applicant_id):
+    """Borrower accepts or rejects one competing financing option. Accepting one
+    finalises the choice; rejecting just removes that option so the other can
+    still be accepted. No login — reached from the fundings page."""
+    action = request.form.get("action")     # 'accept' | 'reject'
+    option = request.form.get("option")     # 'bank' | 'marketplace'
+    if option not in ("bank", "marketplace") or action not in ("accept", "reject"):
+        return redirect(url_for("borrower_fundings", applicant_id=applicant_id))
+    conn = get_db_connection()
+    if conn:
+        try:
+            row = conn.execute(
+                "SELECT rejected_options FROM marketplace_listings WHERE applicant_id=?",
+                (applicant_id,)
+            ).fetchone()
+            if row is not None:
+                if action == "accept":
+                    conn.execute(
+                        "UPDATE marketplace_listings SET chosen_option=? WHERE applicant_id=?",
+                        (option, applicant_id))
+                else:  # reject: add to the rejected set
+                    rejected = set((row["rejected_options"] or "").split(",")) - {""}
+                    rejected.add(option)
+                    conn.execute(
+                        "UPDATE marketplace_listings SET rejected_options=? WHERE applicant_id=?",
+                        (",".join(sorted(rejected)), applicant_id))
+                conn.commit()
+        finally:
+            conn.close()
+    return redirect(url_for("borrower_fundings", applicant_id=applicant_id))
 
 
 # --- Bank Statement Parser (frontend-only) -----------------------------------

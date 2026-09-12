@@ -20,7 +20,7 @@
         </div>
         {% endif %}
 
-        <form method="post">
+        <form method="post" id="borrowerForm">
             <div class="field">
                 <label class="label" for="applicant_id">Applicant ID</label>
                 <input class="input" id="applicant_id" name="applicant_id" type="text"
@@ -28,19 +28,34 @@
                        style="font-family:monospace;letter-spacing:.05em;text-transform:uppercase;">
                 <p class="help">Your loan officer assigned this ID when they assessed your application.</p>
             </div>
-            <button class="btn btn-primary btn-block btn-lg mt-2" type="submit"
-                    style="background:var(--good);border-color:var(--good);">
-                <i class="fas fa-search"></i> View my credit report
-            </button>
+            <input type="hidden" name="goto" id="gotoField" value="passport">
+            <div class="grid grid-2" style="gap:12px;margin-top:.5rem;">
+                <button class="btn btn-block btn-lg" type="submit"
+                        onclick="document.getElementById('gotoField').value='passport'"
+                        style="background:var(--good);border-color:var(--good);color:#fff;">
+                    <i class="fas fa-id-card"></i> View credit passport
+                </button>
+                <button class="btn btn-block btn-lg" type="submit"
+                        onclick="document.getElementById('gotoField').value='fundings'"
+                        style="background:var(--brand);border-color:var(--brand);color:#fff;">
+                    <i class="fas fa-hand-holding-dollar"></i> View fundings
+                </button>
+            </div>
         </form>
     </div>
 
-    <div class="card mt-3" style="padding:1.25rem;background:var(--bg-soft);">
-        <div style="font-size:.82rem;color:var(--text-dim);line-height:1.7;">
-            <strong style="color:var(--text);">What you'll see:</strong><br>
-            Your credit score and tier · The reasons behind it in plain language ·
-            Eligible government loan schemes (MUDRA, SVANidhi, CGTMSE, etc.) ·
-            Steps to improve your score over the next 6 months.
+    <div class="grid grid-2 mt-3" style="gap:12px;">
+        <div class="card" style="padding:1.1rem;background:var(--bg-soft);">
+            <div style="font-weight:700;font-size:.88rem;margin-bottom:.35rem;"><i class="fas fa-id-card" style="color:var(--good)"></i> Credit passport</div>
+            <div style="font-size:.8rem;color:var(--text-dim);line-height:1.6;">
+                Your score &amp; tier · plain-language reasons · eligible government schemes (MUDRA, SVANidhi, CGTMSE) · how to improve over 6 months.
+            </div>
+        </div>
+        <div class="card" style="padding:1.1rem;background:var(--bg-soft);">
+            <div style="font-weight:700;font-size:.88rem;margin-bottom:.35rem;"><i class="fas fa-hand-holding-dollar" style="color:var(--brand)"></i> Fundings</div>
+            <div style="font-size:.8rem;color:var(--text-dim);line-height:1.6;">
+                Every loan offer for you — the bank's direct offer vs marketplace lenders, with rates &amp; collateral. Accept or reject each.
+            </div>
         </div>
     </div>
 
