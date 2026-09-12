@@ -710,7 +710,16 @@ def apply_page():
         entity_type = f.get("entity_type", "Small Business")
         is_business = entity_type == "Small Business"
 
-        avg_monthly_inflow = max(num("avg_monthly_inflow", 20000), 1.0)
+        # Income is split into verifiable digital/bank inflow and (corroborable)
+        # cash inflow. The model scores against the TOTAL; the DVI weighs the two
+        # by how much of each there is and how well each is evidenced.
+        digital_inflow = max(num("avg_monthly_inflow", 20000), 0.0)
+        cash_inflow = max(num("cash_monthly_inflow", 0), 0.0)
+        avg_monthly_inflow = max(digital_inflow + cash_inflow, 1.0)
+        income_confidence = scoring.blend_income_confidence(
+            digital_inflow, f.get("src_income_digital", "verified"),
+            cash_inflow, f.get("src_income_cash", "self_declared"),
+        )
         monthly_expenses = num("monthly_expenses", avg_monthly_inflow * 0.65)
         net_cashflow = max(avg_monthly_inflow - monthly_expenses, 1500)
 
@@ -744,13 +753,22 @@ def apply_page():
             "repayment_burden_ratio": repayment_burden_ratio,
             "requested_loan_amount": requested_loan_amount,
         }
+        # Derive a display tag for the blended income confidence so the DVI
+        # card can show a 🟢/🟡/🔴 chip for income like the other components.
+        if income_confidence >= 85:
+            income_tag = "verified"
+        elif income_confidence >= 55:
+            income_tag = "estimated"
+        else:
+            income_tag = "self_declared"
         field_sources = {
-            "src_income":  f.get("src_income",  "self_declared"),
+            "src_income":  income_tag,
             "src_emi":     f.get("src_emi",      "self_declared"),
             "src_gst":     f.get("src_gst",      "self_declared"),
             "src_utility": f.get("src_utility",  "self_declared"),
         }
-        result = scoring.score_full(raw, entity_type=entity_type, field_sources=field_sources)
+        result = scoring.score_full(raw, entity_type=entity_type, field_sources=field_sources,
+                                    income_confidence=income_confidence)
         result["computed_proposed_emi"] = round(proposed_emi)
         result["computed_net_cashflow"] = round(net_cashflow)
 
@@ -810,7 +828,13 @@ def save_and_list():
 
     entity_type = f.get("entity_type", "Small Business")
     is_business = entity_type == "Small Business"
-    avg_monthly_inflow = max(num("avg_monthly_inflow", 20000), 1.0)
+    digital_inflow = max(num("avg_monthly_inflow", 20000), 0.0)
+    cash_inflow = max(num("cash_monthly_inflow", 0), 0.0)
+    avg_monthly_inflow = max(digital_inflow + cash_inflow, 1.0)
+    income_confidence = scoring.blend_income_confidence(
+        digital_inflow, f.get("src_income_digital", "verified"),
+        cash_inflow, f.get("src_income_cash", "self_declared"),
+    )
     monthly_expenses = num("monthly_expenses", avg_monthly_inflow * 0.65)
     net_cashflow = max(avg_monthly_inflow - monthly_expenses, 1500)
     existing_monthly_emi = num("existing_monthly_emi", 0)
@@ -842,14 +866,24 @@ def save_and_list():
         "repayment_burden_ratio": repayment_burden_ratio,
         "requested_loan_amount": requested_loan_amount,
     }
-    result = scoring.score_full(raw, entity_type=entity_type)
+    field_sources = {
+        "src_emi":     f.get("src_emi",      "self_declared"),
+        "src_gst":     f.get("src_gst",      "self_declared"),
+        "src_utility": f.get("src_utility",  "self_declared"),
+    }
+    result = scoring.score_full(raw, entity_type=entity_type, field_sources=field_sources,
+                                income_confidence=income_confidence)
 
+    # Eligibility uses the DVI-adjusted score. A real affordability (FOIR)
+    # critical blocks listing; a DVI critical should have been routed to the
+    # verification queue rather than reaching this endpoint, so block it too.
+    eff_score = result.get("adjusted_score", result["credit_score"])
     critical_flags = [g for g in result.get("guardrail_flags", []) if g["severity"] == "critical"]
-    if result["credit_score"] < config.MARKETPLACE_MIN_SCORE or critical_flags:
+    if eff_score < config.MARKETPLACE_MIN_SCORE or critical_flags:
         return redirect(url_for("apply_page"))
 
     applicant_id = "NEW-" + str(uuid.uuid4())[:8].upper()
-    floor_rate = _risk_based_rate(result["credit_score"])
+    floor_rate = _risk_based_rate(eff_score)
     interest_rate = min(28.0, max(8.5, float(f.get("interest_rate") or floor_rate)))
     purpose = f.get("purpose", "Working capital")
     borrower_email = (f.get("borrower_email") or "").strip()[:120]

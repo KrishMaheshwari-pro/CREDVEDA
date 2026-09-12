@@ -26,7 +26,20 @@
     <nav class="nav">
         <div class="nav-inner">
             <a class="brand" href="{{ url_for('home') }}">
-                <span class="brand-mark">CV</span>
+                <svg class="brand-mark" viewBox="0 0 32 32" width="32" height="32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="CredVeda">
+                    <rect width="32" height="32" rx="9" fill="url(#cvGrad)"/>
+                    <path d="M6.5 20.5 L12.5 13.5 L17 17 L25.5 8" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M20.5 8 H25.5 V13" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="6.5" cy="20.5" r="1.7" fill="#fff"/>
+                    <circle cx="12.5" cy="13.5" r="1.7" fill="#fff"/>
+                    <circle cx="17" cy="17" r="1.7" fill="#fff"/>
+                    <defs>
+                        <linearGradient id="cvGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#4f8cff"/>
+                            <stop offset="1" stop-color="#8b5cf6"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
                 <span>CredVeda</span>
             </a>
 
@@ -140,7 +153,23 @@
         <div class="container">
             <div class="footer-grid">
                 <div>
-                    <div class="brand mb-2"><span class="brand-mark">CV</span><span>CredVeda</span></div>
+                    <div class="brand mb-2">
+                        <svg class="brand-mark" viewBox="0 0 32 32" width="32" height="32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="CredVeda">
+                            <rect width="32" height="32" rx="9" fill="url(#cvGrad2)"/>
+                            <path d="M6.5 20.5 L12.5 13.5 L17 17 L25.5 8" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M20.5 8 H25.5 V13" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="6.5" cy="20.5" r="1.7" fill="#fff"/>
+                            <circle cx="12.5" cy="13.5" r="1.7" fill="#fff"/>
+                            <circle cx="17" cy="17" r="1.7" fill="#fff"/>
+                            <defs>
+                                <linearGradient id="cvGrad2" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                                    <stop stop-color="#4f8cff"/>
+                                    <stop offset="1" stop-color="#8b5cf6"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <span>CredVeda</span>
+                    </div>
                     <p class="muted" style="max-width:42ch">Alternative credit scoring for individuals and small
                         businesses with little or no bureau history — with a plain-language explanation behind every
                         score.</p>

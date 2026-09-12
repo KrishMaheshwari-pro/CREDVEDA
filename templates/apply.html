@@ -62,12 +62,13 @@
                         </select>
                     </div>
                     <div class="field" style="grid-column:1/-1">
-                        <label class="label">Operating / income history</label>
+                        <label class="label">Operating / income history <span class="hint">· in months</span></label>
                         <div class="input-group">
                             <input type="number" name="vintage_months" id="vintage_months" class="input" min="0"
                                 value="{{ form_values.vintage_months or 36 }}">
                             <span class="input-suffix">months</span>
                         </div>
+                        <p class="help">How long the business has operated / individual has had income</p>
                     </div>
                 </div>
             </div>
@@ -79,11 +80,11 @@
                 <div class="grid grid-2" style="gap:0 16px">
                     <div class="field">
                         <label class="label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                            <span>Monthly income / inflow <span class="hint">· all sources incl. cash</span></span>
-                            <select name="src_income" class="src-select" title="How was this figure obtained?">
-                                <option value="self_declared" {{ 'selected' if form_values.get('src_income','self_declared')=='self_declared' }}>🔴 Self-declared</option>
-                                <option value="estimated"     {{ 'selected' if form_values.get('src_income')=='estimated' }}>🟡 Estimated (GST/proxy)</option>
-                                <option value="verified"      {{ 'selected' if form_values.get('src_income')=='verified' }}>🟢 Verified (statement)</option>
+                            <span>Digital / bank inflow <span class="hint">· UPI, cards, transfers</span></span>
+                            <select name="src_income_digital" class="src-select" title="How was this figure obtained?">
+                                <option value="verified"      {{ 'selected' if form_values.get('src_income_digital','verified')=='verified' }}>🟢 Verified · bank statement</option>
+                                <option value="estimated"     {{ 'selected' if form_values.get('src_income_digital')=='estimated' }}>🟡 Estimated</option>
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_income_digital')=='self_declared' }}>🔴 Self-declared</option>
                             </select>
                         </label>
                         <div class="input-group">
@@ -91,7 +92,23 @@
                                 value="{{ form_values.avg_monthly_inflow or 90000 }}">
                             <span class="input-suffix">₹</span>
                         </div>
-                        <p class="help">Cash-heavy businesses: enter total income — tag as Estimated if cash component is significant.</p>
+                        <p class="help">Money received through bank / UPI — verifiable from statements.</p>
+                    </div>
+                    <div class="field">
+                        <label class="label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <span>Cash inflow <span class="hint">· counter sales, cash</span></span>
+                            <select name="src_income_cash" class="src-select" title="Cash can't be seen in a bank statement — how is it corroborated?">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_income_cash','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated"     {{ 'selected' if form_values.get('src_income_cash')=='estimated' }}>🟡 GST / invoice corroborated</option>
+                                <option value="verified"      {{ 'selected' if form_values.get('src_income_cash')=='verified' }}>🟢 Field-verified (officer visit)</option>
+                            </select>
+                        </label>
+                        <div class="input-group">
+                            <input type="number" name="cash_monthly_inflow" id="cash_monthly_inflow" class="input" min="0"
+                                value="{{ form_values.cash_monthly_inflow or 0 }}">
+                            <span class="input-suffix">₹</span>
+                        </div>
+                        <p class="help">Not visible in a bank statement. Corroborate with GST turnover, purchase invoices, or a field visit to raise confidence.</p>
                     </div>
                     <div class="field">
                         <label class="label">Monthly transactions</label>
@@ -149,7 +166,7 @@
                             <select name="src_gst" class="src-select" title="How was this figure obtained?">
                                 <option value="self_declared" {{ 'selected' if form_values.get('src_gst','self_declared')=='self_declared' }}>🔴 Self-declared</option>
                                 <option value="estimated"     {{ 'selected' if form_values.get('src_gst')=='estimated' }}>🟡 Estimated</option>
-                                <option value="verified"      {{ 'selected' if form_values.get('src_gst')=='verified' }}>🟢 GST Portal</option>
+                                <option value="verified"      {{ 'selected' if form_values.get('src_gst')=='verified' }}>🟢 Verified · GST portal</option>
                             </select>
                         </label>
                         <div class="input-group">
@@ -180,7 +197,7 @@
                             <select name="src_utility" class="src-select" title="How was this figure obtained?">
                                 <option value="self_declared" {{ 'selected' if form_values.get('src_utility','self_declared')=='self_declared' }}>🔴 Self-declared</option>
                                 <option value="estimated"     {{ 'selected' if form_values.get('src_utility')=='estimated' }}>🟡 Estimated</option>
-                                <option value="verified"      {{ 'selected' if form_values.get('src_utility')=='verified' }}>🟢 Utility Bill</option>
+                                <option value="verified"      {{ 'selected' if form_values.get('src_utility')=='verified' }}>🟢 Verified · utility bill</option>
                             </select>
                         </label>
                         <div class="input-group">
@@ -241,7 +258,7 @@
                             <select name="src_emi" class="src-select" title="How was this figure obtained?">
                                 <option value="self_declared" {{ 'selected' if form_values.get('src_emi','self_declared')=='self_declared' }}>🔴 Self-declared</option>
                                 <option value="estimated"     {{ 'selected' if form_values.get('src_emi')=='estimated' }}>🟡 Estimated</option>
-                                <option value="verified"      {{ 'selected' if form_values.get('src_emi')=='verified' }}>🟢 Bank Statement</option>
+                                <option value="verified"      {{ 'selected' if form_values.get('src_emi')=='verified' }}>🟢 Verified · bank statement</option>
                             </select>
                         </label>
                         <div class="input-group">
@@ -656,7 +673,9 @@
     const PRESETS = {
         strong: {
             entity_type: 'Small Business', business_type: 'Retail / Kirana Store', geography_tier: 'Tier 2',
-            vintage_months: 84, avg_monthly_inflow: 240000, monthly_txn_count: 180, txn_bounce_rate: 1,
+            vintage_months: 84, avg_monthly_inflow: 90000, cash_monthly_inflow: 150000,
+            src_income_digital: 'verified', src_income_cash: 'estimated',
+            monthly_txn_count: 180, txn_bounce_rate: 1,
             digital_adoption_ratio: 82, inflow_growth_rate_6m: 9, inflow_volatility_cv: 11,
             gst_registered: true, gst_filing_regularity: 96, overdue_invoice_ratio: 5,
             utility_ontime_ratio: 98, rent_ontime_ratio: 97,
@@ -667,7 +686,9 @@
         },
         thin: {
             entity_type: 'Individual', business_type: 'Daily Wage Worker', geography_tier: 'Rural',
-            vintage_months: 9, avg_monthly_inflow: 14000, monthly_txn_count: 6, txn_bounce_rate: 9,
+            vintage_months: 9, avg_monthly_inflow: 4000, cash_monthly_inflow: 10000,
+            src_income_digital: 'estimated', src_income_cash: 'self_declared',
+            monthly_txn_count: 6, txn_bounce_rate: 9,
             digital_adoption_ratio: 12, inflow_growth_rate_6m: -2, inflow_volatility_cv: 46,
             gst_registered: false, utility_ontime_ratio: 76, rent_ontime_ratio: 80,
             existing_loan_count: 0, existing_monthly_emi: 0,
@@ -676,7 +697,9 @@
         },
         overleveraged: {
             entity_type: 'Small Business', business_type: 'Transport & Logistics', geography_tier: 'Tier 1',
-            vintage_months: 52, avg_monthly_inflow: 190000, monthly_txn_count: 90, txn_bounce_rate: 6,
+            vintage_months: 52, avg_monthly_inflow: 190000, cash_monthly_inflow: 0,
+            src_income_digital: 'verified', src_income_cash: 'self_declared',
+            monthly_txn_count: 90, txn_bounce_rate: 6,
             digital_adoption_ratio: 72, inflow_growth_rate_6m: 2, inflow_volatility_cv: 27,
             gst_registered: true, gst_filing_regularity: 88, overdue_invoice_ratio: 22,
             utility_ontime_ratio: 90, rent_ontime_ratio: 88,

@@ -34,23 +34,45 @@ _DVI_FIELDS = {
 _SOURCE_CONFIDENCE = {"verified": 100, "estimated": 70, "self_declared": 30}
 
 
-def compute_dvi(field_sources: dict, entity_type: str) -> int:
+def blend_income_confidence(digital_amt: float, digital_src: str,
+                            cash_amt: float, cash_src: str) -> float:
+    """Amount-weighted confidence of the income figure.
+
+    Digital/bank inflow is verifiable from statements; cash inflow is not, but
+    can be corroborated (GST turnover, purchase invoices, a field visit). A
+    kirana store that is 70% cash therefore is not automatically low-confidence
+    — the verifiable 30% counts fully, and the cash 70% counts at whatever
+    corroboration level it carries. This is exactly how NBFCs underwrite
+    cash-heavy small businesses in practice."""
+    total = (digital_amt or 0) + (cash_amt or 0)
+    if total <= 0:
+        return float(_SOURCE_CONFIDENCE.get(digital_src, 30))
+    cd = _SOURCE_CONFIDENCE.get(digital_src, 100)
+    cc = _SOURCE_CONFIDENCE.get(cash_src, 30)
+    return (digital_amt * cd + cash_amt * cc) / total
+
+
+def compute_dvi(field_sources: dict, entity_type: str, income_confidence: float = None) -> int:
     """Data Verification Index (0–100): proportion of score-driving data that is
     backed by a verifiable source rather than the borrower's own declaration.
 
-    Cash-heavy businesses are NOT penalised for low digital inflow — they can
-    declare their true income and tag it as 'estimated' (from GST/proxy signals)
-    or 'verified' (by document). Only pure self-declarations carry the lowest
-    confidence weight, giving borrowers a direct incentive to share proof."""
+    The income component is an amount-weighted blend of verifiable digital/bank
+    inflow and (corroborable) cash inflow — passed in as `income_confidence`.
+    The remaining components use their per-field source tags. This gives
+    borrowers a direct incentive to share proof for whatever slice of income
+    they can, rather than an all-or-nothing penalty for earning in cash."""
     total_w = 0
     weighted = 0
     for field, (applies_to, w) in _DVI_FIELDS.items():
         if applies_to == "business" and entity_type == "Individual":
             continue
-        conf = _SOURCE_CONFIDENCE.get(field_sources.get(field, "self_declared"), 30)
+        if field == "src_income" and income_confidence is not None:
+            conf = income_confidence
+        else:
+            conf = _SOURCE_CONFIDENCE.get(field_sources.get(field, "self_declared"), 30)
         total_w += w
         weighted += w * conf
-    return int(round(weighted / total_w)) if total_w else 40
+    return int(round(weighted / total_w)) if total_w else 30
 
 
 def emi(principal: float, tenure_months: int, annual_rate: float = config.ASSUMED_ANNUAL_INTEREST_RATE) -> float:
@@ -449,13 +471,14 @@ def score_core(raw: dict, entity_type: str = "Small Business", dvi: int = 100) -
     }
 
 
-def score_full(raw: dict, entity_type: str = "Small Business", field_sources: dict = None) -> dict:
+def score_full(raw: dict, entity_type: str = "Small Business", field_sources: dict = None,
+               income_confidence: float = None) -> dict:
     """Full pipeline for a single applicant: score + confidence band +
     guardrails + SHAP-style reason codes + improvement path. Used for the
     live "New Assessment" form and the applicant detail page."""
     if field_sources is None:
         field_sources = {}
-    dvi = compute_dvi(field_sources, entity_type)
+    dvi = compute_dvi(field_sources, entity_type, income_confidence=income_confidence)
     components = load_components()
     result = score_core(raw, entity_type, dvi=dvi)
     X_scaled = result.pop("_X_scaled")

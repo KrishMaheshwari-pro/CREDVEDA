@@ -299,7 +299,12 @@ table.table td.strong { color: var(--text); font-weight: 600; }
     position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
     font-size: .8125rem; color: var(--text-faint); pointer-events: none;
 }
-.input-group .input { padding-right: 38px; }
+.input-group .input { padding-right: 52px; }
+/* Hide native number spinners inside a suffixed input-group so the up/down
+   arrows don't collide with the unit label (₹, %, months). */
+.input-group input[type="number"]::-webkit-outer-spin-button,
+.input-group input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.input-group input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .checkrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
 .checkrow input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--brand); cursor: pointer; }
 .checkrow label { font-size: .875rem; color: var(--text); cursor: pointer; margin: 0; }
