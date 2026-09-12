@@ -162,8 +162,11 @@ def extract_signals(text: str) -> dict:
         if v is not None:
             sig[key] = v
 
-    # Bureau score: a bare 300-900 integer near the word.
-    m = re.search(r"(?:bureau|cibil|credit score|score of)\D{0,15}(\d{3})", t)
+    # Bureau score: a bare 300-900 integer beside the word, in either order --
+    # "bureau score 710" and "a 710 bureau score" are both common.
+    _B = r"(?:bureau|cibil|credit score|score of)"
+    m = (re.search(_B + r"\D{0,15}(\d{3})\b", t)
+         or re.search(r"\b(\d{3})\D{0,15}" + _B, t))
     if m:
         raw = int(m.group(1))
         if 300 <= raw <= 900:
