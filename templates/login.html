@@ -8,24 +8,56 @@
     <div class="auth-shell">
         <div class="auth-pitch">
             <span class="eyebrow"><i class="fas fa-circle-nodes"></i> Alternative Credit Scoring</span>
+            {% if portal == 'lender' %}
+            <h1>Co-fund the <span class="gradient-text">underserved</span> borrower.</h1>
+            <p class="muted" style="font-size:1.0625rem;max-width:46ch">
+                Browse credit-scored loan listings, commit the amount you want, and set your rate —
+                all backed by alternative-data scores you can trust.
+            </p>
+            <ul class="auth-points">
+                <li><span class="tick"><i class="fas fa-check"></i></span> See full score, reasons &amp; eligibility for every listing</li>
+                <li><span class="tick"><i class="fas fa-check"></i></span> Slider to choose how much to fund (partial or full)</li>
+                <li><span class="tick"><i class="fas fa-check"></i></span> Match floor rate → instant accept; propose higher → bank reviews</li>
+                <li><span class="tick"><i class="fas fa-check"></i></span> Auto-disbursed when 100% of the loan is committed</li>
+            </ul>
+            {% else %}
             <h1>Creditworthy, but <span class="gradient-text">invisible</span> to the bureau.</h1>
             <p class="muted" style="font-size:1.0625rem;max-width:46ch">
                 CredVeda scores individuals and small businesses from the financial data they already generate —
                 and explains every decision in plain language.
             </p>
             <ul class="auth-points">
-                <li><span class="tick"><i class="fas fa-check"></i></span> Scores from payments, GST, utility &amp; rent data — no bureau file needed</li>
+                <li><span class="tick"><i class="fas fa-check"></i></span> Score from payments, GST, utility &amp; rent — no bureau file needed</li>
                 <li><span class="tick"><i class="fas fa-check"></i></span> Plain-language reason codes behind every score</li>
-                <li><span class="tick"><i class="fas fa-check"></i></span> Confidence bands instead of false precision on thin files</li>
-                <li><span class="tick"><i class="fas fa-check"></i></span> Fairness audited across geography, gender and business type</li>
+                <li><span class="tick"><i class="fas fa-check"></i></span> List approved applicants on the co-funding marketplace</li>
+                <li><span class="tick"><i class="fas fa-check"></i></span> Fairness-audited across geography, gender &amp; business type</li>
             </ul>
+            {% endif %}
         </div>
 
         <div class="auth-card">
-            <h2 class="mb-1">Welcome back</h2>
-            <p class="muted mb-3" style="font-size:.9375rem">Sign in to explore the portfolio and score applicants.</p>
+            <!-- Portal tabs -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:1.5rem;">
+                <a href="{{ url_for('login', portal='bank') }}"
+                   style="display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem;font-size:.85rem;font-weight:{% if portal == 'bank' %}700{% else %}400{% endif %};text-decoration:none;background:{% if portal == 'bank' %}var(--brand){% else %}var(--bg-soft){% endif %};color:{% if portal == 'bank' %}#fff{% else %}var(--text-dim){% endif %};border-right:1px solid var(--border);">
+                    <i class="fas fa-university"></i> Bank / NBFC
+                </a>
+                <a href="{{ url_for('login', portal='lender') }}"
+                   style="display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem;font-size:.85rem;font-weight:{% if portal == 'lender' %}700{% else %}400{% endif %};text-decoration:none;background:{% if portal == 'lender' %}var(--accent){% else %}var(--bg-soft){% endif %};color:{% if portal == 'lender' %}#fff{% else %}var(--text-dim){% endif %};">
+                    <i class="fas fa-hand-holding-dollar"></i> Lender / Investor
+                </a>
+            </div>
 
-            <form method="post" action="{{ url_for('login') }}">
+            <h2 class="mb-1">
+                {% if portal == 'lender' %}Lender portal{% else %}Bank portal{% endif %}
+            </h2>
+            <p class="muted mb-3" style="font-size:.9375rem">
+                {% if portal == 'lender' %}Sign in to browse the marketplace and commit funds.
+                {% else %}Sign in to score applicants and manage your portfolio.{% endif %}
+            </p>
+
+            <form method="post" action="{{ url_for('login', portal=portal) }}">
+                <input type="hidden" name="portal" value="{{ portal }}">
                 {% if error %}
                 <div class="alert alert-critical">
                     <span class="alert-icon"><i class="fas fa-circle-exclamation"></i></span>
@@ -40,10 +72,20 @@
                     <label class="label" for="password">Password</label>
                     <input class="input" id="password" name="password" type="password" placeholder="••••••••" required>
                 </div>
-                <button class="btn btn-primary btn-block btn-lg mt-2" type="submit">Sign in</button>
+                <button class="btn btn-primary btn-block btn-lg mt-2" type="submit"
+                        style="{% if portal == 'lender' %}background:var(--accent);border-color:var(--accent);{% endif %}">
+                    Sign in
+                    {% if portal == 'lender' %}<i class="fas fa-hand-holding-dollar"></i>{% else %}<i class="fas fa-university"></i>{% endif %}
+                </button>
             </form>
+
             <p class="help center mt-3 mb-0">
-                No account yet? <a href="{{ url_for('signup') }}">Create one</a> — it's a local demo, anything works.
+                No account yet? <a href="{{ url_for('signup') }}">Create one</a> — local demo, no email needed.
+            </p>
+            <p class="help center mb-0">
+                <a href="{{ url_for('borrower_portal') }}" style="color:var(--good)">
+                    <i class="fas fa-user" style="font-size:.75rem;"></i> I'm a borrower — check my loan status
+                </a>
             </p>
         </div>
     </div>

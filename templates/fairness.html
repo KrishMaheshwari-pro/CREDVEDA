@@ -88,17 +88,19 @@
                     <thead>
                         <tr>
                             <th>Group</th><th>N</th><th>Avg score</th>
-                            <th>Approval</th><th>Thin file</th><th>vs. best</th>
+                            <th>Approval</th><th>Thin file</th><th>vs. best</th><th>Root cause</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for r in rows %}
+                        {% set is_thin_driver = r.thin_file_rate > 0.35 %}
                         <tr class="{{ 'row-flagged' if r.flagged }}">
                             <td class="strong">{{ r.group }}</td>
                             <td>{{ r.n }}</td>
                             <td>{{ r.avg_score }}</td>
                             <td class="strong">{{ (r.approval_rate * 100)|round(1) }}%</td>
-                            <td>{{ (r.thin_file_rate * 100)|round(1) }}%</td>
+                            <td style="color:{{ '#ef4444' if r.thin_file_rate > 0.35 else 'var(--text-dim)' }}">
+                                {{ (r.thin_file_rate * 100)|round(1) }}%</td>
                             <td>
                                 {% if r.flagged %}
                                 <span class="chip chip-bad">{{ (r.adverse_impact_ratio * 100)|round(0)|int }}%</span>
@@ -106,15 +108,56 @@
                                 <span class="chip chip-good">{{ (r.adverse_impact_ratio * 100)|round(0)|int }}%</span>
                                 {% endif %}
                             </td>
+                            <td style="font-size:.75rem;">
+                                {% if not r.flagged %}
+                                <span style="color:var(--good);">—</span>
+                                {% elif is_thin_driver %}
+                                <span style="color:#f59e0b;" title="High thin-file rate suggests data scarcity, not behavioural bias">
+                                  <i class="fas fa-database"></i> Data gap
+                                </span>
+                                {% else %}
+                                <span style="color:#ef4444;" title="Low thin-file rate — gap may reflect proxy bias; review feature set">
+                                  <i class="fas fa-magnifying-glass-chart"></i> Review
+                                </span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <div class="chart-box">
-                <canvas id="chart-{{ group_col }}" height="{{ 60 + rows|length * 26 }}"></canvas>
+            <div>
+                <div class="chart-box" style="margin-bottom:.75rem;">
+                    <canvas id="chart-{{ group_col }}" height="{{ 60 + rows|length * 26 }}"></canvas>
+                </div>
+                <div class="chart-box">
+                    <canvas id="score-chart-{{ group_col }}" height="{{ 60 + rows|length * 26 }}"></canvas>
+                </div>
             </div>
         </div>
+
+        <!-- Flagged-group explanation -->
+        {% if flagged_here %}
+        <div style="margin-top:.85rem; padding:.85rem; background:var(--bg-soft); border-radius:8px; font-size:.82rem; color:var(--text-dim);">
+          <strong style="color:var(--text);">Why these groups are flagged:</strong>
+          {% for r in flagged_here %}
+          <div style="margin-top:.5rem;">
+            <strong>{{ r.group }}</strong> —
+            {% if r.thin_file_rate > 0.35 %}
+              {{ (r.thin_file_rate * 100)|round(0)|int }}% of this group have thin files (incomplete data).
+              When data is sparse, the model widens the confidence band and the midpoint score tends lower.
+              <em>This is a data-access gap, not behavioural bias.</em>
+              Mitigation: collect more data signals for this population (mobile money, utility records).
+            {% else %}
+              This group's approval rate is {{ (r.adverse_impact_ratio * 100)|round(0)|int }}% of the highest group
+              despite a {{ (r.thin_file_rate * 100)|round(1) }}% thin-file rate.
+              The gap may reflect a proxy variable correlated with {{ r.group.lower() }}.
+              <em>Recommended action: review feature correlations and consider group-specific thresholds.</em>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
     </div>
     {% endfor %}
 
@@ -128,33 +171,69 @@
 
     Object.keys(report.groups).forEach(groupCol => {
         const rows = report.groups[groupCol];
+        const sharedOpts = {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { ticks: { color: css('--text-faint'), font:{size:11} }, grid: { color: css('--border-soft') } },
+                y: { ticks: { color: css('--text-dim'), font:{size:11} }, grid: { display: false } }
+            }
+        };
+
+        // Approval rate chart
         new Chart(document.getElementById('chart-' + groupCol), {
             type: 'bar',
             data: {
                 labels: rows.map(r => r.group),
                 datasets: [{
+                    label: 'Approval rate',
                     data: rows.map(r => +(r.approval_rate * 100).toFixed(1)),
                     backgroundColor: rows.map(r => r.flagged ? 'rgba(239,68,68,.75)' : 'rgba(34,197,94,.7)'),
-                    borderRadius: 4,
-                    borderSkipped: false
+                    borderRadius: 4, borderSkipped: false
                 }]
             },
             options: {
-                indexAxis: 'y',
-                responsive: true,
-                maintainAspectRatio: false,
+                ...sharedOpts,
                 plugins: {
-                    legend: { display: false },
-                    tooltip: { callbacks: { label: c => c.parsed.x + '% approved' } }
+                    legend: { labels:{color:'#8b949e',font:{size:10}} },
+                    title: { display:true, text:'Approval rate %', color:'#8b949e', font:{size:11}, padding:{bottom:4} },
+                    tooltip: { callbacks: { label: c => c.parsed.x.toFixed(1) + '% approved' } }
                 },
                 scales: {
-                    x: { beginAtZero: true, max: 100,
-                         ticks: { color: css('--text-faint'), font: { size: 11 }, callback: v => v + '%' },
-                         grid: { color: css('--border-soft') } },
-                    y: { ticks: { color: css('--text-dim'), font: { size: 11 } }, grid: { display: false } }
+                    x: { ...sharedOpts.scales.x, beginAtZero:true, max:100, ticks:{...sharedOpts.scales.x.ticks, callback:v=>v+'%'} },
+                    y: sharedOpts.scales.y
                 }
             }
         });
+
+        // Average score chart
+        const scoreCtx = document.getElementById('score-chart-' + groupCol);
+        if (scoreCtx) {
+            const scoreMin = Math.min(...rows.map(r=>r.avg_score)) - 40;
+            new Chart(scoreCtx, {
+                type: 'bar',
+                data: {
+                    labels: rows.map(r => r.group),
+                    datasets: [{
+                        label: 'Avg score',
+                        data: rows.map(r => r.avg_score),
+                        backgroundColor: rows.map(r => r.flagged ? 'rgba(245,158,11,.75)' : 'rgba(79,140,255,.7)'),
+                        borderRadius: 4, borderSkipped: false
+                    }]
+                },
+                options: {
+                    ...sharedOpts,
+                    plugins: {
+                        legend: { labels:{color:'#8b949e',font:{size:10}} },
+                        title: { display:true, text:'Average credit score', color:'#8b949e', font:{size:11}, padding:{bottom:4} },
+                        tooltip: { callbacks: { label: c => 'Score: ' + c.parsed.x } }
+                    },
+                    scales: {
+                        x: { ...sharedOpts.scales.x, beginAtZero:false, min: Math.max(300, scoreMin) },
+                        y: sharedOpts.scales.y
+                    }
+                }
+            });
+        }
     });
 </script>
 {% endblock %}

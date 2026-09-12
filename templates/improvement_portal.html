@@ -1,0 +1,626 @@
+{% extends "base.html" %}
+
+{% block title %}Credit Improvement Plan — {{ app_data.applicant_name }} — CredVeda{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: #58a6ff;
+        font-size: 0.88em;
+        text-decoration: none;
+        margin-bottom: 20px;
+        transition: color 0.15s;
+    }
+    .back-link:hover { color: #79c0ff; text-decoration: none; }
+
+    .score-display-box {
+        background: linear-gradient(135deg, #161b22 60%, #0d1117);
+        border: 1px solid #30363d;
+        border-radius: 14px;
+        padding: 24px 30px;
+        display: flex;
+        align-items: center;
+        gap: 32px;
+        flex-wrap: wrap;
+    }
+    .score-circle {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        flex-shrink: 0;
+    }
+    .score-circle .score-num {
+        font-size: 2.1em;
+        font-weight: 800;
+        line-height: 1;
+        margin-bottom: 0;
+    }
+    .score-circle .score-lbl {
+        font-size: 0.65em;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        margin-bottom: 0;
+        margin-top: 2px;
+    }
+    .arrow-divider {
+        font-size: 2em;
+        color: #30363d;
+        flex-shrink: 0;
+    }
+    .score-meta-block {
+        flex: 1;
+        min-width: 180px;
+    }
+    .score-meta-block h4 {
+        font-size: 0.8em;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #8b949e;
+        margin-bottom: 4px;
+    }
+    .score-meta-block .band-pill {
+        display: inline-block;
+        padding: 3px 12px;
+        border-radius: 20px;
+        font-size: 0.82em;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+
+    /* Step Cards */
+    .step-card {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 14px;
+        padding: 22px 24px;
+        position: relative;
+        overflow: hidden;
+        transition: border-color 0.2s;
+    }
+    .step-card:hover { border-color: #58a6ff55; }
+    .step-card .step-number {
+        position: absolute;
+        top: 0;
+        right: 0;
+        background-color: #21262d;
+        color: #58a6ff;
+        font-size: 0.72em;
+        font-weight: 700;
+        padding: 5px 12px;
+        border-bottom-left-radius: 10px;
+        letter-spacing: 0.05em;
+    }
+    .step-feature-tag {
+        display: inline-block;
+        background-color: #2563eb22;
+        color: #58a6ff;
+        border: 1px solid #2563eb44;
+        border-radius: 20px;
+        font-size: 0.75em;
+        font-weight: 600;
+        padding: 2px 10px;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .step-action-text {
+        font-size: 1.05em;
+        font-weight: 600;
+        color: #e6edf3;
+        margin-bottom: 6px;
+        line-height: 1.4;
+    }
+    .step-hindi {
+        color: #8b949e;
+        font-size: 0.83em;
+        cursor: pointer;
+        margin-bottom: 12px;
+    }
+    .step-hindi summary {
+        color: #58a6ff;
+        font-size: 0.85em;
+        cursor: pointer;
+        list-style: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-bottom: 0;
+    }
+    .step-hindi summary::marker, .step-hindi summary::-webkit-details-marker { display: none; }
+    .step-hindi .hindi-text {
+        margin-top: 6px;
+        padding: 8px 12px;
+        background-color: #21262d;
+        border-radius: 6px;
+        border-left: 3px solid #58a6ff44;
+        font-style: italic;
+        margin-bottom: 0;
+    }
+    .step-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 14px;
+    }
+    .badge-timeline {
+        background-color: #21262d;
+        color: #c9d1d9;
+        border: 1px solid #30363d;
+        border-radius: 20px;
+        font-size: 0.78em;
+        font-weight: 600;
+        padding: 3px 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .badge-difficulty {
+        border-radius: 20px;
+        font-size: 0.78em;
+        font-weight: 700;
+        padding: 3px 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .badge-easy   { background:#14532d33; color:#4ade80; border:1px solid #14532d; }
+    .badge-medium { background:#78350f33; color:#fbbf24; border:1px solid #78350f; }
+    .badge-hard   { background:#7f1d1d33; color:#f87171; border:1px solid #7f1d1d; }
+    .badge-gain {
+        background:#14532d33;
+        color:#4ade80;
+        border:1px solid #14532d;
+        border-radius: 20px;
+        font-size: 0.82em;
+        font-weight: 700;
+        padding: 3px 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .sub-tips-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .sub-tips-list li {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        color: #8b949e;
+        font-size: 0.84em;
+        margin-bottom: 5px;
+        line-height: 1.45;
+    }
+    .sub-tips-list li::before {
+        content: '→';
+        color: #58a6ff;
+        flex-shrink: 0;
+        margin-top: 1px;
+    }
+
+    /* Trajectory Chart */
+    .chart-card {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 14px;
+        padding: 24px;
+    }
+    .chart-card h3 {
+        font-size: 1.05em;
+        margin-bottom: 4px;
+    }
+    .chart-card p {
+        color: #8b949e;
+        font-size: 0.85em;
+        margin-bottom: 18px;
+    }
+
+    /* Reason Codes */
+    .reason-code-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 14px 0;
+        border-bottom: 1px solid #21262d;
+    }
+    .reason-code-item:last-child { border-bottom: none; }
+    .reason-code-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background-color: #7f1d1d33;
+        color: #f87171;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 0.88em;
+    }
+    .reason-code-text h5 {
+        font-size: 0.9em;
+        font-weight: 600;
+        color: #e6edf3;
+        margin-bottom: 2px;
+    }
+    .reason-code-text p {
+        font-size: 0.82em;
+        color: #8b949e;
+        margin-bottom: 0;
+    }
+
+    /* CTA Footer */
+    .cta-footer {
+        background: linear-gradient(135deg, #2563eb18, #161b22);
+        border: 1px solid #2563eb44;
+        border-radius: 14px;
+        padding: 28px 32px;
+        text-align: center;
+        margin-top: 32px;
+    }
+    .cta-footer h3 {
+        font-size: 1.15em;
+        color: #e6edf3;
+        margin-bottom: 8px;
+    }
+    .cta-footer p {
+        color: #8b949e;
+        font-size: 0.9em;
+        margin-bottom: 18px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="padding:10px 0 40px; max-width:900px; margin:0 auto;">
+
+    <!-- Back link -->
+    <a href="/score/{{ app_id }}" class="back-link">
+        <i class="fas fa-arrow-left"></i> Back to Score Report
+    </a>
+
+    <!-- Page Header -->
+    <div style="margin-bottom:28px;">
+        <h1 style="font-size:1.75em; margin-bottom:6px; color:#e6edf3;">
+            <i class="fas fa-chart-line" style="color:#4ade80; margin-right:10px;"></i>Your 6-Month Credit Improvement Plan
+        </h1>
+        <p style="color:#8b949e; font-size:0.95em; margin-bottom:0;">
+            Tailored for <strong style="color:#e6edf3;">{{ app_data.applicant_name }}</strong>
+            &nbsp;·&nbsp; {{ app_data.business_type }}
+            &nbsp;·&nbsp; {{ app_data.state }}
+        </p>
+    </div>
+
+    <!-- Score Summary -->
+    <div class="score-display-box" style="margin-bottom:28px;">
+        <!-- Current Score -->
+        <div>
+            <div style="color:#8b949e; font-size:0.78em; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:8px;">Current Score</div>
+            <div class="score-circle"
+                style="background:{{ band.color }}18; border:3px solid {{ band.color }}66; width:90px; height:90px;">
+                <div class="score-num" style="color:{{ band.color }};">{{ score_data.score }}</div>
+                <div class="score-lbl" style="color:{{ band.color }}88;">/ 100</div>
+            </div>
+            <div style="margin-top:10px;">
+                <span class="badge-timeline" style="margin-top:4px; font-size:0.78em; background:{{ band.color }}18; color:{{ band.color }}; border-color:{{ band.color }}44;">
+                    {{ band.label }}
+                </span>
+            </div>
+        </div>
+
+        <div class="arrow-divider"><i class="fas fa-arrow-right"></i></div>
+
+        <!-- Projected Score -->
+        <div>
+            <div style="color:#8b949e; font-size:0.78em; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:8px;">Projected Score (6 months)</div>
+            <div class="score-circle"
+                style="background:#14532d33; border:3px solid #4ade8066; width:90px; height:90px;">
+                <div class="score-num" style="color:#4ade80;">
+                    {{ score_data.improvement_steps.projected_score if score_data.improvement_steps.projected_score is defined else '—' }}
+                </div>
+                <div class="score-lbl" style="color:#4ade8088;">/ 100</div>
+            </div>
+            <div style="margin-top:10px;">
+                <span class="badge-gain" style="font-size:0.78em;">
+                    <i class="fas fa-arrow-up"></i>
+                    +{{ (score_data.improvement_steps.projected_score - score_data.score) if score_data.improvement_steps.projected_score is defined else '?' }} pts potential
+                </span>
+            </div>
+        </div>
+
+        <div class="score-meta-block" style="padding-left:10px; border-left:1px solid #30363d;">
+            <h4 style="margin-bottom:8px;">Business Info</h4>
+            <div style="display:grid; gap:6px;">
+                <div style="font-size:0.85em; color:#c9d1d9;"><span style="color:#8b949e;">Revenue (avg):</span> ₹{{ "{:,.0f}".format(app_data.monthly_revenue_avg) }}/mo</div>
+                <div style="font-size:0.85em; color:#c9d1d9;"><span style="color:#8b949e;">Type:</span> {{ app_data.business_type }}</div>
+                <div style="font-size:0.85em; color:#c9d1d9;"><span style="color:#8b949e;">State:</span> {{ app_data.state }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Improvement Action Cards -->
+    <div style="margin-bottom:32px;">
+        <h2 style="font-size:1.15em; margin-bottom:16px;">
+            <i class="fas fa-tasks" style="color:#58a6ff; margin-right:8px;"></i>Priority Action Steps
+        </h2>
+
+        <div style="display:grid; gap:16px;">
+            {% for step in score_data.improvement_steps.steps %}
+            <div class="step-card">
+                <div class="step-number">STEP {{ loop.index }}</div>
+
+                <div class="step-feature-tag">{{ step.feature }}</div>
+                <div class="step-action-text">{{ step.action }}</div>
+
+                <!-- Hindi translation (collapsible) -->
+                {% if step.hindi_translation is defined %}
+                <details class="step-hindi">
+                    <summary><i class="fas fa-language"></i> हिन्दी में देखें</summary>
+                    <div class="hindi-text">{{ step.hindi_translation }}</div>
+                </details>
+                {% endif %}
+
+                <!-- Badges -->
+                <div class="step-badges">
+                    {% if step.timeline is defined %}
+                    <span class="badge-timeline">
+                        <i class="fas fa-clock"></i> {{ step.timeline }}
+                    </span>
+                    {% endif %}
+                    {% if step.difficulty is defined %}
+                        {% set diff = step.difficulty | lower %}
+                        {% if diff == 'easy' %}
+                            <span class="badge-difficulty badge-easy"><i class="fas fa-circle" style="font-size:0.6em;"></i> Easy</span>
+                        {% elif diff == 'medium' %}
+                            <span class="badge-difficulty badge-medium"><i class="fas fa-circle" style="font-size:0.6em;"></i> Medium</span>
+                        {% else %}
+                            <span class="badge-difficulty badge-hard"><i class="fas fa-circle" style="font-size:0.6em;"></i> Hard</span>
+                        {% endif %}
+                    {% endif %}
+                    {% if step.score_gain is defined %}
+                    <span class="badge-gain">
+                        <i class="fas fa-plus"></i>{{ step.score_gain }} pts
+                    </span>
+                    {% endif %}
+                </div>
+
+                <!-- Sub-tips (hardcoded per feature category) -->
+                <div style="background-color:#0d1117; border-radius:8px; padding:12px 14px; border:1px solid #21262d;">
+                    <div style="font-size:0.78em; text-transform:uppercase; letter-spacing:0.06em; color:#58a6ff; margin-bottom:8px; font-weight:700;">
+                        <i class="fas fa-lightbulb" style="margin-right:4px;"></i>Practical Tips
+                    </div>
+                    <ul class="sub-tips-list" id="tips-{{ loop.index }}">
+                        <!-- Populated by JS below -->
+                    </ul>
+                </div>
+            </div>
+
+            <script>
+            (function() {
+                var featureRaw = {{ step.feature | tojson }};
+                var feature = featureRaw.toLowerCase();
+                var tips = [];
+
+                if (feature.includes('upi') || feature.includes('transaction') || feature.includes('digital')) {
+                    tips = [
+                        "Pay at least 3–5 vendors via UPI weekly to build a consistent digital transaction trail.",
+                        "Use the same UPI-linked account for all business payments — consistency signals reliability.",
+                        "Enable UPI AutoPay for recurring expenses like subscriptions or utility bills to show regular outflow patterns."
+                    ];
+                } else if (feature.includes('saving') || feature.includes('balance') || feature.includes('deposit')) {
+                    tips = [
+                        "Maintain a minimum balance of ₹10,000 in your business savings account at month-end for the next 3 months.",
+                        "Set up an automatic sweep of 10% of monthly revenue into a savings or FD account.",
+                        "Avoid large, unexplained cash withdrawals — keep savings visible in your bank statements."
+                    ];
+                } else if (feature.includes('gst') || feature.includes('tax') || feature.includes('filing')) {
+                    tips = [
+                        "File GST returns (GSTR-1 and GSTR-3B) every month on time, even if turnover is zero.",
+                        "Keep all B2B invoices with GSTIN details so input tax credit can be claimed and verified.",
+                        "Ensure your declared GST turnover matches your bank deposit history — discrepancies reduce score trust."
+                    ];
+                } else if (feature.includes('utility') || feature.includes('rent') || feature.includes('bill') || feature.includes('electricity')) {
+                    tips = [
+                        "Pay electricity, water, and internet bills before the due date every month — set reminders.",
+                        "Use a single business bank account to pay all utility bills, creating a clear audit trail.",
+                        "If you pay shop rent in cash, ask your landlord for a formal rent receipt and digitise future payments."
+                    ];
+                } else if (feature.includes('revenue') || feature.includes('income') || feature.includes('sales')) {
+                    tips = [
+                        "Issue formal invoices for every sale and ensure customers pay into your business bank account.",
+                        "Avoid mixing personal and business income in the same account.",
+                        "Aim for steady month-on-month revenue growth rather than lumpy seasonal spikes."
+                    ];
+                } else if (feature.includes('credit') || feature.includes('loan') || feature.includes('emi') || feature.includes('debt')) {
+                    tips = [
+                        "Pay all existing EMIs on or before the due date — even a 1-day delay affects your credit profile.",
+                        "Avoid applying to multiple lenders simultaneously; each hard inquiry lowers your score.",
+                        "If you have an outstanding overdraft, reduce it by at least 30% over the next 3 months."
+                    ];
+                } else if (feature.includes('kyc') || feature.includes('document') || feature.includes('identity') || feature.includes('aadhaar') || feature.includes('pan')) {
+                    tips = [
+                        "Ensure your PAN, Aadhaar, and business registration are linked and up to date in your bank records.",
+                        "Complete full KYC at your primary bank branch — minimal-KYC accounts have lower credit weightage.",
+                        "Keep a digital copy of all business licenses (GST, FSSAI, Udyam) ready for lender verification."
+                    ];
+                } else if (feature.includes('insurance') || feature.includes('pmjdy') || feature.includes('pmjjby')) {
+                    tips = [
+                        "Enroll in PMJJBY (₹330/year) and PMSBY (₹20/year) if not already done — they signal financial planning.",
+                        "Ensure premium deductions auto-debit from your savings account for a consistent record.",
+                        "Explore MSME-specific insurance products from banks — they improve creditworthiness signals."
+                    ];
+                } else {
+                    tips = [
+                        "Document all business income and expenses in a simple ledger or accounting app.",
+                        "Open and actively use a dedicated current account for your business.",
+                        "Build relationships with your bank branch manager — they can provide credit references."
+                    ];
+                }
+
+                var ul = document.getElementById('tips-{{ loop.index }}');
+                if (ul) {
+                    tips.forEach(function(tip) {
+                        var li = document.createElement('li');
+                        li.textContent = tip;
+                        ul.appendChild(li);
+                    });
+                }
+            })();
+            </script>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- 6-Month Score Trajectory Chart -->
+    {% if score_data.improvement_steps.trajectory_scores is defined %}
+    <div class="chart-card" style="margin-bottom:28px;">
+        <h3><i class="fas fa-chart-area" style="color:#58a6ff; margin-right:8px;"></i>Projected Score Trajectory</h3>
+        <p>Estimated score growth if you complete all recommended actions on schedule</p>
+        <div style="position:relative; height:220px;">
+            <canvas id="trajectoryChart"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Reason Codes -->
+    {% if score_data.reason_codes %}
+    <div class="bg-dark-card" style="margin-bottom:28px;">
+        <h3 style="font-size:1.05em; margin-bottom:4px; color:#f87171;">
+            <i class="fas fa-exclamation-circle" style="margin-right:8px;"></i>What's Pulling Your Score Down
+        </h3>
+        <p style="color:#8b949e; font-size:0.85em; margin-bottom:18px;">These are the main negative factors in your current credit assessment</p>
+
+        <div>
+            {% for code in score_data.reason_codes %}
+            {% if code.direction is not defined or code.direction == 'negative' or code.impact < 0 %}
+            <div class="reason-code-item">
+                <div class="reason-code-icon">
+                    <i class="fas fa-arrow-down"></i>
+                </div>
+                <div class="reason-code-text">
+                    <h5>{{ code.feature if code.feature is defined else code.code }}</h5>
+                    <p>{{ code.borrower_text if code.borrower_text is defined else code.description }}</p>
+                </div>
+                {% if code.impact is defined %}
+                <div style="margin-left:auto; flex-shrink:0;">
+                    <span style="color:#f87171; font-weight:700; font-size:0.9em;">{{ code.impact | round(1) }} pts</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- CTA Footer -->
+    <div class="cta-footer">
+        <h3><i class="fas fa-rocket" style="color:#4ade80; margin-right:8px;"></i>Ready for a Fresh Start?</h3>
+        <p>Once you've completed the improvements above, submit a new application for a re-assessment — your score will reflect your progress.</p>
+        <a href="/apply" class="btn-primary" style="display:inline-block; text-decoration:none; font-size:0.95em;">
+            <i class="fas fa-file-alt" style="margin-right:8px;"></i>Apply Again for Fresh Assessment
+        </a>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if score_data.improvement_steps.trajectory_scores is defined %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var trajectoryScores = {{ score_data.improvement_steps.trajectory_scores | tojson }};
+    var trajectoryMonths = {{ score_data.improvement_steps.trajectory_months | tojson }};
+    var currentScore = {{ score_data.score }};
+
+    var ctx = document.getElementById('trajectoryChart');
+    if (!ctx) return;
+
+    var gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 220);
+    gradient.addColorStop(0, 'rgba(74, 222, 128, 0.35)');
+    gradient.addColorStop(1, 'rgba(74, 222, 128, 0.02)');
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: trajectoryMonths,
+            datasets: [
+                {
+                    label: 'Projected Score',
+                    data: trajectoryScores,
+                    borderColor: '#4ade80',
+                    backgroundColor: gradient,
+                    borderWidth: 2.5,
+                    pointBackgroundColor: '#4ade80',
+                    pointBorderColor: '#0d1117',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Current Score',
+                    data: trajectoryMonths.map(function() { return currentScore; }),
+                    borderColor: '#f8717155',
+                    borderWidth: 1.5,
+                    borderDash: [6, 4],
+                    pointRadius: 0,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#8b949e',
+                        font: { size: 12 },
+                        boxWidth: 14
+                    }
+                },
+                tooltip: {
+                    backgroundColor: '#21262d',
+                    borderColor: '#30363d',
+                    borderWidth: 1,
+                    titleColor: '#e6edf3',
+                    bodyColor: '#8b949e',
+                    callbacks: {
+                        label: function(ctx) {
+                            return ' ' + ctx.dataset.label + ': ' + ctx.parsed.y;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: '#21262d' },
+                    ticks: { color: '#8b949e', font: { size: 11 } }
+                },
+                y: {
+                    min: 0,
+                    max: 100,
+                    grid: { color: '#21262d' },
+                    ticks: {
+                        color: '#8b949e',
+                        font: { size: 11 },
+                        stepSize: 20
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

@@ -81,6 +81,41 @@ def create_database():
         """)
         print("Table 'repayments' created.")
 
+        # --- Credit Marketplace ------------------------------------------------
+        # Lets lenders browse and co-fund vetted, scored applicants.
+        # Solving PS #4's core access-to-credit gap by creating competition
+        # among lenders for verified creditworthy borrowers.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS marketplace_listings (
+            listing_id       TEXT PRIMARY KEY,
+            applicant_id     TEXT NOT NULL,
+            listed_by        TEXT NOT NULL,
+            listed_at        TEXT NOT NULL,
+            amount_requested REAL NOT NULL,
+            tenure_months    INTEGER NOT NULL,
+            credit_score     INTEGER NOT NULL,
+            tier_label       TEXT,
+            entity_type      TEXT,
+            business_type    TEXT,
+            geography_tier   TEXT,
+            purpose          TEXT,
+            status           TEXT DEFAULT 'open',
+            total_committed  REAL DEFAULT 0.0,
+            fully_funded_at  TEXT
+        )
+        """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lender_interests (
+            interest_id       TEXT PRIMARY KEY,
+            listing_id        TEXT NOT NULL,
+            lender_username   TEXT NOT NULL,
+            committed_amount  REAL NOT NULL,
+            status            TEXT DEFAULT 'active',
+            created_at        TEXT NOT NULL
+        )
+        """)
+        print("Tables 'marketplace_listings' and 'lender_interests' created.")
+
         conn.commit()
         print("Database setup complete.")
     except sqlite3.Error as e:

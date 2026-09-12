@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+{% block title %}Score Simulator — CredVeda{% endblock %}
+{% block head_extra %}
+<style>
+.sim-slider { width: 100%; accent-color: var(--accent); cursor: pointer; }
+.sim-section-label {
+    font-size: .7rem; letter-spacing: .1em; color: var(--muted);
+    text-transform: uppercase; margin: 1.25rem 0 .5rem;
+}
+.sim-row {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .55rem 0; border-bottom: 1px solid var(--border);
+}
+.sim-row:last-child { border-bottom: none; }
+.sim-label { flex: 1; font-size: .85rem; color: var(--text); }
+.sim-val {
+    min-width: 3.5rem; text-align: right;
+    font-weight: 700; font-size: .85rem; color: var(--accent);
+}
+.sim-range { flex: 0 0 140px; }
+
+.score-ring {
+    width: 130px; height: 130px; border-radius: 50%;
+    border: 8px solid var(--accent);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    margin: 0 auto .75rem;
+    transition: border-color .35s;
+}
+.score-num { font-size: 2.4rem; font-weight: 800; line-height: 1; }
+.score-denom { font-size: .7rem; color: var(--muted); }
+
+.tier-pill {
+    display: inline-block; padding: 3px 14px;
+    border-radius: 20px; font-size: .75rem; font-weight: 700;
+    border: 2px solid; text-transform: uppercase; letter-spacing: .05em;
+}
+
+.scheme-chip {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: 4px 10px; border-radius: 6px;
+    font-size: .75rem; font-weight: 600;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); margin: 2px 3px;
+}
+
+.toggle-grp { display: flex; gap: 0; }
+.toggle-grp button {
+    flex: 1; padding: .45rem; font-size: .8rem;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--muted); cursor: pointer;
+}
+.toggle-grp button:first-child { border-radius: 6px 0 0 6px; }
+.toggle-grp button:last-child  { border-radius: 0 6px 6px 0; }
+.toggle-grp button.active {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+}
+
+#gst-section { transition: opacity .3s; }
+#business-section { transition: opacity .3s; }
+#bureau-section { transition: opacity .3s; }
+.section-hidden { opacity: .35; pointer-events: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:1100px; padding-top:2rem; padding-bottom:3rem;">
+  <div style="text-align:center; margin-bottom:2rem;">
+    <h1 style="font-size:1.9rem; font-weight:800; margin-bottom:.4rem;">Credit Score Simulator</h1>
+    <p style="color:var(--muted); max-width:55ch; margin:0 auto;">
+      Adjust each factor to see how it shifts the model score in real time.
+      All inputs map directly to the live scoring engine — no approximations.
+    </p>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 380px; gap:1.75rem; align-items:start;">
+    <!-- ── Left panel ── -->
+    <div>
+
+      <!-- Entity type toggle -->
+      <div class="card" style="padding:1rem 1.25rem; margin-bottom:1rem;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+          <span style="font-weight:700;">Applicant type</span>
+          <div class="toggle-grp" id="entityToggle">
+            <button class="active" onclick="setEntity('Small Business')">Small Business</button>
+            <button onclick="setEntity('Individual')">Individual</button>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem;">
+          <div>
+            <label style="font-size:.75rem; color:var(--muted);">Business type</label>
+            <select id="sel-business_type" class="form-control" style="margin-top:.25rem; font-size:.8rem;" onchange="debouncedSim()">
+              <option>Retail</option><option>Food & Beverage</option><option>Services</option>
+              <option>Manufacturing</option><option>Agriculture</option><option>Technology</option>
+              <option>Healthcare</option><option>Other</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:.75rem; color:var(--muted);">Gender</label>
+            <select id="sel-gender" class="form-control" style="margin-top:.25rem; font-size:.8rem;" onchange="debouncedSim()">
+              <option>Male</option><option>Female</option><option>Other</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:.75rem; color:var(--muted);">Loan amount (₹)</label>
+            <input type="number" id="inp-loan_amount" class="form-control" value="200000" min="10000" max="5000000" step="10000"
+              style="margin-top:.25rem; font-size:.8rem;" oninput="debouncedSim()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Cash-flow -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem;">
+        <div class="sim-section-label">Cash-flow &amp; income</div>
+
+        <div class="sim-row">
+          <span class="sim-label">Avg monthly inflow (₹)</span>
+          <input type="range" class="sim-slider sim-range" id="sl-avg_monthly_inflow" min="5000" max="500000" step="1000" value="35000" oninput="updLbl('avg_monthly_inflow',fmt₹(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-avg_monthly_inflow">₹35,000</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Inflow growth — last 6 months</span>
+          <input type="range" class="sim-slider sim-range" id="sl-inflow_growth" min="-0.3" max="0.5" step="0.02" value="0.05" oninput="updLbl('inflow_growth',fmtPct(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-inflow_growth">+5%</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Inflow volatility (lower = steadier)</span>
+          <input type="range" class="sim-slider sim-range" id="sl-inflow_volatility" min="0.01" max="0.80" step="0.01" value="0.22" oninput="updLbl('inflow_volatility',fmtDec2(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-inflow_volatility">0.22</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Monthly expenses (₹)</span>
+          <input type="range" class="sim-slider sim-range" id="sl-monthly_expenses" min="2000" max="400000" step="1000" value="22000" oninput="updLbl('monthly_expenses',fmt₹(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-monthly_expenses">₹22,000</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Existing monthly EMI (₹)</span>
+          <input type="range" class="sim-slider sim-range" id="sl-existing_emi" min="0" max="100000" step="500" value="3000" oninput="updLbl('existing_emi',fmt₹(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-existing_emi">₹3,000</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Existing open loans</span>
+          <input type="range" class="sim-slider sim-range" id="sl-existing_loans" min="0" max="8" step="1" value="1" oninput="updLbl('existing_loans',this.value); debouncedSim()">
+          <span class="sim-val" id="lbl-existing_loans">1</span>
+        </div>
+      </div>
+
+      <!-- Digital behaviour -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem;">
+        <div class="sim-section-label">Digital payment behaviour</div>
+        <div class="sim-row">
+          <span class="sim-label">Monthly digital transactions</span>
+          <input type="range" class="sim-slider sim-range" id="sl-txn_count" min="0" max="200" step="1" value="45" oninput="updLbl('txn_count',this.value); debouncedSim()">
+          <span class="sim-val" id="lbl-txn_count">45</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Transaction bounce / failure rate</span>
+          <input type="range" class="sim-slider sim-range" id="sl-txn_bounce" min="0" max="0.5" step="0.01" value="0.05" oninput="updLbl('txn_bounce',fmtPct(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-txn_bounce">5%</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Digital adoption ratio</span>
+          <input type="range" class="sim-slider sim-range" id="sl-digital_adoption" min="0" max="1" step="0.02" value="0.55" oninput="updLbl('digital_adoption',fmtDec2(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-digital_adoption">0.55</span>
+        </div>
+      </div>
+
+      <!-- Payment discipline -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem;">
+        <div class="sim-section-label">Payment discipline</div>
+        <div class="sim-row">
+          <span class="sim-label">Utility bills paid on time</span>
+          <input type="range" class="sim-slider sim-range" id="sl-utility_ontime" min="0" max="1" step="0.02" value="0.85" oninput="updLbl('utility_ontime',fmtPct(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-utility_ontime">85%</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Rent paid on time</span>
+          <input type="range" class="sim-slider sim-range" id="sl-rent_ontime" min="0" max="1" step="0.02" value="0.88" oninput="updLbl('rent_ontime',fmtPct(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-rent_ontime">88%</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Business / relationship vintage (months)</span>
+          <input type="range" class="sim-slider sim-range" id="sl-vintage" min="1" max="180" step="1" value="30" oninput="updLbl('vintage',this.value+' mo'); debouncedSim()">
+          <span class="sim-val" id="lbl-vintage">30 mo</span>
+        </div>
+      </div>
+
+      <!-- GST section (business only) -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem;" id="gst-section">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.25rem;">
+          <div class="sim-section-label" style="margin:0;">GST (business only)</div>
+          <div class="toggle-grp" id="gstToggle" style="width:140px;">
+            <button class="active" onclick="setGST(1)">Registered</button>
+            <button onclick="setGST(0)">None</button>
+          </div>
+        </div>
+        <div id="gst-fields">
+          <div class="sim-row">
+            <span class="sim-label">Filing regularity</span>
+            <input type="range" class="sim-slider sim-range" id="sl-gst_regularity" min="0" max="1" step="0.02" value="0.80" oninput="updLbl('gst_regularity',fmtPct(this.value)); debouncedSim()">
+            <span class="sim-val" id="lbl-gst_regularity">80%</span>
+          </div>
+          <div class="sim-row">
+            <span class="sim-label">Overdue invoice ratio</span>
+            <input type="range" class="sim-slider sim-range" id="sl-overdue_invoice" min="0" max="0.8" step="0.02" value="0.10" oninput="updLbl('overdue_invoice',fmtPct(this.value)); debouncedSim()">
+            <span class="sim-val" id="lbl-overdue_invoice">10%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Supplier section (business only) -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem;" id="business-section">
+        <div class="sim-section-label">Supplier network (business only)</div>
+        <div class="sim-row">
+          <span class="sim-label">Supplier concentration (HHI; lower = more diverse)</span>
+          <input type="range" class="sim-slider sim-range" id="sl-supplier_hhi" min="0.05" max="1" step="0.02" value="0.30" oninput="updLbl('supplier_hhi',fmtDec2(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-supplier_hhi">0.30</span>
+        </div>
+        <div class="sim-row">
+          <span class="sim-label">Repeat supplier ratio</span>
+          <input type="range" class="sim-slider sim-range" id="sl-repeat_supplier" min="0" max="1" step="0.02" value="0.60" oninput="updLbl('repeat_supplier',fmtPct(this.value)); debouncedSim()">
+          <span class="sim-val" id="lbl-repeat_supplier">60%</span>
+        </div>
+      </div>
+
+      <!-- Bureau section -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem;" id="bureau-section">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.25rem;">
+          <div class="sim-section-label" style="margin:0;">Bureau score (optional)</div>
+          <div class="toggle-grp" id="bureauToggle" style="width:140px;">
+            <button onclick="setBureau(1)">Available</button>
+            <button class="active" onclick="setBureau(0)">Not available</button>
+          </div>
+        </div>
+        <div id="bureau-fields" class="section-hidden">
+          <div class="sim-row">
+            <span class="sim-label">CIBIL / bureau score (300–900)</span>
+            <input type="range" class="sim-slider sim-range" id="sl-bureau_score" min="300" max="900" step="1" value="650" oninput="updLbl('bureau_score',this.value); debouncedSim()">
+            <span class="sim-val" id="lbl-bureau_score">650</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Right sticky panel ── -->
+    <div style="position:sticky; top:80px;">
+
+      <!-- Score ring -->
+      <div class="card" style="padding:1.5rem 1.25rem; text-align:center; margin-bottom:1rem;">
+        <div id="score-ring" class="score-ring" style="border-color:var(--accent);">
+          <span id="score-num" class="score-num" style="color:var(--accent);">—</span>
+          <span class="score-denom">/ 900</span>
+        </div>
+        <span id="tier-pill" class="tier-pill" style="color:var(--accent); border-color:var(--accent);">—</span>
+        <div style="display:flex; justify-content:center; gap:1.5rem; margin-top:.9rem; font-size:.8rem; color:var(--muted);">
+          <span>Band <b id="score-band" style="color:var(--text);">—</b></span>
+          <span>FOIR <b id="score-foir" style="color:var(--text);">—</b></span>
+        </div>
+        <p id="score-conf-lbl" style="font-size:.75rem; color:var(--muted); margin:.5rem 0 0;">
+          Confidence: <b id="score-conf" style="color:var(--text);">—</b>
+        </p>
+        <div id="sim-loading" style="display:none; color:var(--accent); font-size:.75rem; margin-top:.4rem;">
+          Calculating...
+        </div>
+      </div>
+
+      <!-- Guardrail alert -->
+      <div id="guardrail-box" style="display:none;" class="card" style="padding:.9rem 1.1rem; margin-bottom:1rem; border-color:#ef4444;">
+        <div style="font-weight:700; color:#ef4444; font-size:.85rem; margin-bottom:.35rem;">
+          <i class="fas fa-exclamation-triangle"></i> Guardrail warning
+        </div>
+        <p id="guardrail-msg" style="font-size:.8rem; color:var(--muted); margin:0;"></p>
+      </div>
+
+      <!-- Feature impact chart -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem;">
+        <div style="font-weight:700; font-size:.9rem; margin-bottom:.75rem;">Feature impact</div>
+        <canvas id="impactChart" style="height:220px;"></canvas>
+      </div>
+
+      <!-- Matched loan schemes -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem;">
+        <div style="font-weight:700; font-size:.9rem; margin-bottom:.6rem;">Eligible schemes</div>
+        <div id="schemes-list"><span style="font-size:.8rem; color:var(--muted);">Run simulation first…</span></div>
+      </div>
+
+      <!-- Top improvement insight -->
+      <div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1rem; border-left:3px solid var(--accent);">
+        <div style="font-weight:700; font-size:.9rem; margin-bottom:.35rem;">Top improvement step</div>
+        <p id="insight-text" style="font-size:.82rem; color:var(--muted); margin:0;">
+          Move any slider to get a personalised tip.
+        </p>
+      </div>
+
+      <!-- CTAs -->
+      <div style="display:flex; gap:.6rem;">
+        <button onclick="resetSliders()"
+          style="flex:1; padding:.55rem; border:1px solid var(--border); background:none;
+                 color:var(--muted); border-radius:8px; cursor:pointer; font-size:.82rem;">
+          ↺ Reset
+        </button>
+        <a href="{{ url_for('apply_page') }}" class="btn" style="flex:1; text-align:center; font-size:.82rem;">
+          Submit real application →
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let impactChart = null;
+let entityType = 'Small Business';
+let gstRegistered = 1;
+let bureauAvailable = 0;
+
+/* ── Helpers ──────────────────────────────────────────────── */
+const fmt₹ = v => '₹' + Number(v).toLocaleString('en-IN');
+const fmtPct = v => Math.round(v * 100) + '%';
+const fmtDec2 = v => parseFloat(v).toFixed(2);
+function updLbl(id, val) { document.getElementById('lbl-' + id).textContent = val; }
+
+/* ── Toggle handlers ────────────────────────────────────────── */
+function setEntity(type) {
+  entityType = type;
+  document.querySelectorAll('#entityToggle button').forEach(b => {
+    b.classList.toggle('active', b.textContent === type);
+  });
+  const isBiz = type === 'Small Business';
+  document.getElementById('gst-section').classList.toggle('section-hidden', !isBiz);
+  document.getElementById('business-section').classList.toggle('section-hidden', !isBiz);
+  debouncedSim();
+}
+
+function setGST(val) {
+  gstRegistered = val;
+  document.querySelectorAll('#gstToggle button').forEach((b, i) => {
+    b.classList.toggle('active', (i === 0 && val === 1) || (i === 1 && val === 0));
+  });
+  document.getElementById('gst-fields').style.opacity = val ? '1' : '.35';
+  document.getElementById('gst-fields').style.pointerEvents = val ? '' : 'none';
+  debouncedSim();
+}
+
+function setBureau(val) {
+  bureauAvailable = val;
+  document.querySelectorAll('#bureauToggle button').forEach((b, i) => {
+    b.classList.toggle('active', (i === 0 && val === 1) || (i === 1 && val === 0));
+  });
+  const fields = document.getElementById('bureau-fields');
+  fields.classList.toggle('section-hidden', val === 0);
+  debouncedSim();
+}
+
+/* ── Build payload from current slider state ─────────────── */
+function buildPayload() {
+  const g = id => parseFloat(document.getElementById(id).value);
+  const sel = id => document.getElementById(id).value;
+  const inp = id => parseFloat(document.getElementById(id).value) || 0;
+  return {
+    entity_type: entityType,
+    business_type: sel('sel-business_type'),
+    gender: sel('sel-gender'),
+    avg_monthly_inflow: g('sl-avg_monthly_inflow'),
+    inflow_growth_rate_6m: g('sl-inflow_growth'),
+    inflow_volatility_cv: g('sl-inflow_volatility'),
+    monthly_expenses: g('sl-monthly_expenses'),
+    existing_monthly_emi: g('sl-existing_emi'),
+    existing_loan_count: g('sl-existing_loans'),
+    monthly_txn_count: g('sl-txn_count'),
+    txn_bounce_rate: g('sl-txn_bounce'),
+    digital_adoption_ratio: g('sl-digital_adoption'),
+    utility_ontime_ratio: g('sl-utility_ontime'),
+    rent_ontime_ratio: g('sl-rent_ontime'),
+    vintage_months: g('sl-vintage'),
+    gst_registered: gstRegistered,
+    gst_filing_regularity: g('sl-gst_regularity'),
+    overdue_invoice_ratio: g('sl-overdue_invoice'),
+    supplier_concentration_hhi: g('sl-supplier_hhi'),
+    repeat_supplier_ratio: g('sl-repeat_supplier'),
+    bureau_score_available: bureauAvailable,
+    bureau_score_raw: bureauAvailable ? g('sl-bureau_score') : 0,
+    requested_loan_amount: inp('inp-loan_amount'),
+    requested_tenure_months: 24,
+  };
+}
+
+/* ── Core simulation call ────────────────────────────────── */
+const TIER_COLORS = {
+  good: '#22c55e', warn: '#f59e0b', bad: '#ef4444'
+};
+
+async function runSimulation() {
+  const loadEl = document.getElementById('sim-loading');
+  loadEl.style.display = 'block';
+  try {
+    const resp = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildPayload())
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+    renderResult(d);
+  } catch(e) {
+    console.error('Simulator error:', e);
+    document.getElementById('score-num').textContent = '?';
+    document.getElementById('tier-pill').textContent = 'Error — check console';
+  }
+  loadEl.style.display = 'none';
+}
+
+function renderResult(d) {
+  const color = TIER_COLORS[d.tier_tone] || '#4f8cff';
+
+  /* Score ring */
+  const ring = document.getElementById('score-ring');
+  ring.style.borderColor = color;
+  const numEl = document.getElementById('score-num');
+  numEl.textContent = d.credit_score;
+  numEl.style.color = color;
+
+  /* Tier pill */
+  const pill = document.getElementById('tier-pill');
+  pill.textContent = d.tier_label;
+  pill.style.color = color; pill.style.borderColor = color;
+  pill.style.background = color + '18';
+
+  /* Band & FOIR */
+  document.getElementById('score-band').textContent = d.band_low + '–' + d.band_high;
+  document.getElementById('score-foir').textContent = d.foir
+    ? Math.round(d.foir.foir * 100) + '%' + (d.foir.passes ? '' : ' ⚠')
+    : '—';
+  document.getElementById('score-conf').textContent = d.confidence_label || '—';
+
+  /* Guardrails */
+  const flags = d.guardrail_flags || [];
+  const criticals = flags.filter(f => f.severity === 'critical');
+  const gb = document.getElementById('guardrail-box');
+  if (criticals.length) {
+    gb.style.display = 'block';
+    gb.style.borderColor = '#ef4444';
+    document.getElementById('guardrail-msg').textContent = criticals[0].message;
+  } else if (flags.filter(f => f.severity === 'warning').length) {
+    gb.style.display = 'block';
+    gb.style.borderColor = '#f59e0b';
+    document.getElementById('guardrail-msg').textContent = flags.filter(f => f.severity === 'warning')[0].message;
+  } else {
+    gb.style.display = 'none';
+  }
+
+  /* Impact chart from reason_codes */
+  const rcs = d.reason_codes || [];
+  if (rcs.length) updateImpactChart(rcs);
+
+  /* Improvement insight */
+  const ip = d.improvement_path || [];
+  if (ip.length) {
+    document.getElementById('insight-text').textContent =
+      ip[0].label + ' — ' + (ip[0].text || ip[0].action_en || '');
+  }
+
+  /* Schemes */
+  const schemes = d.matched_schemes || [];
+  const sEl = document.getElementById('schemes-list');
+  if (schemes.length === 0) {
+    sEl.innerHTML = '<span style="font-size:.78rem;color:var(--muted);">Score too low for government schemes currently.</span>';
+  } else {
+    sEl.innerHTML = schemes.map(s =>
+      `<span class="scheme-chip"><span style="background:${s.tag_color||'#4f8cff'};color:#fff;padding:1px 6px;border-radius:4px;font-size:.7rem;">${s.tag||''}</span> ${s.name} — up to ₹${Number(s.max_loan_inr).toLocaleString('en-IN')} @ ${s.interest_rate}%</span>`
+    ).join('');
+  }
+}
+
+function updateImpactChart(rcs) {
+  const labels = rcs.slice(0, 6).map(r => (r.label || r.code || '').substring(0, 32));
+  const values = rcs.slice(0, 6).map(r => r.impact === 'positive' ? 1 : -1);
+  const colors = values.map(v => v > 0 ? 'rgba(34,197,94,0.75)' : 'rgba(239,68,68,0.75)');
+  const ctx = document.getElementById('impactChart');
+  if (!ctx) return;
+  if (impactChart) impactChart.destroy();
+  impactChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => ctx.dataset.data[ctx.dataIndex] > 0 ? ' Positive factor' : ' Negative factor' }
+      }},
+      scales: {
+        x: { ticks: { color: '#8b949e', callback: v => v > 0 ? '▲' : '▼' }, grid: { color: '#30363d' },
+             min: -1.4, max: 1.4 },
+        y: { ticks: { color: '#e6edf3', font: { size: 11 } }, grid: { color: '#30363d' } }
+      }
+    }
+  });
+}
+
+/* ── Debounce ────────────────────────────────────────────── */
+let debTimer;
+function debouncedSim() {
+  clearTimeout(debTimer);
+  debTimer = setTimeout(runSimulation, 380);
+}
+
+/* ── Reset ────────────────────────────────────────────────── */
+function resetSliders() {
+  const defs = {
+    'sl-avg_monthly_inflow': 35000, 'sl-inflow_growth': 0.05,
+    'sl-inflow_volatility': 0.22, 'sl-monthly_expenses': 22000,
+    'sl-existing_emi': 3000, 'sl-existing_loans': 1,
+    'sl-txn_count': 45, 'sl-txn_bounce': 0.05, 'sl-digital_adoption': 0.55,
+    'sl-utility_ontime': 0.85, 'sl-rent_ontime': 0.88, 'sl-vintage': 30,
+    'sl-gst_regularity': 0.80, 'sl-overdue_invoice': 0.10,
+    'sl-supplier_hhi': 0.30, 'sl-repeat_supplier': 0.60, 'sl-bureau_score': 650,
+  };
+  Object.entries(defs).forEach(([id, v]) => {
+    const el = document.getElementById(id);
+    if (el) { el.value = v; el.dispatchEvent(new Event('input')); }
+  });
+  document.getElementById('inp-loan_amount').value = 200000;
+  setEntity('Small Business'); setGST(1); setBureau(0);
+}
+
+/* ── Boot ────────────────────────────────────────────────── */
+resetSliders();
+</script>
+{% endblock %}

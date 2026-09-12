@@ -32,18 +32,70 @@
 
             {% if session.get('logged_in') %}
             <div class="nav-links" id="navLinks">
+
+                {% if session.get('role') == 'lender' %}
+                <!-- LENDER navbar: just marketplace + sign out -->
+                <a href="{{ url_for('marketplace') }}"
+                    class="{{ 'active' if request.endpoint in ['marketplace','marketplace_listing_detail'] }}">
+                    <i class="fas fa-store" style="margin-right:.3rem;font-size:.8rem;"></i> Marketplace
+                </a>
+                <span class="chip chip-info" style="font-size:.7rem;padding:2px 8px;">Lender</span>
+
+                {% else %}
+                <!-- BANK navbar: full set -->
                 <a href="{{ url_for('dashboard_page') }}"
                     class="{{ 'active' if request.endpoint in ['dashboard_page', 'applicant_detail'] }}">Applicants</a>
                 <a href="{{ url_for('apply_page') }}"
                     class="{{ 'active' if request.endpoint == 'apply_page' }}">Assess</a>
-                <a href="{{ url_for('loan_portfolio') }}"
-                    class="{{ 'active' if request.endpoint in ['loan_portfolio', 'loan_detail'] }}">Loan Book</a>
-                <a href="{{ url_for('fairness_page') }}"
-                    class="{{ 'active' if request.endpoint == 'fairness_page' }}">Fairness</a>
-                <a href="{{ url_for('models_page') }}"
-                    class="{{ 'active' if request.endpoint == 'models_page' }}">Models</a>
-                <a href="{{ url_for('ai_features_page') }}"
-                    class="{{ 'active' if request.endpoint == 'ai_features_page' }}">How It Works</a>
+                <a href="{{ url_for('marketplace') }}"
+                    class="{{ 'active' if request.endpoint in ['marketplace','marketplace_listing_detail'] }}">Marketplace</a>
+
+                <!-- Tools dropdown -->
+                <div style="position:relative; display:inline-block;" onmouseleave="this.querySelector('.ddmenu').style.display='none'">
+                  <a href="#" class="{{ 'active' if request.endpoint in ['simulator_page','bulk_assess','parse_statement_page','lender_ops'] }}"
+                     onmouseenter="this.nextElementSibling.style.display='block'"
+                     onclick="var m=this.nextElementSibling; m.style.display=m.style.display==='block'?'none':'block'; return false;"
+                     style="display:flex;align-items:center;gap:.3rem;">
+                    Tools <i class="fas fa-chevron-down" style="font-size:.6rem;opacity:.7;"></i>
+                  </a>
+                  <div class="ddmenu" style="display:none;position:absolute;top:calc(100% + 6px);left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;min-width:185px;z-index:500;padding:.35rem 0;box-shadow:0 8px 24px rgba(0,0,0,.25);">
+                    <a href="{{ url_for('simulator_page') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
+                      <i class="fas fa-sliders" style="width:14px;color:var(--accent);"></i> Score Simulator
+                    </a>
+                    <a href="{{ url_for('bulk_assess') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
+                      <i class="fas fa-table" style="width:14px;color:var(--accent);"></i> Bulk CSV Assess
+                    </a>
+                    <a href="{{ url_for('parse_statement_page') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
+                      <i class="fas fa-file-invoice-dollar" style="width:14px;color:var(--accent);"></i> Parse Statement
+                    </a>
+                    <a href="{{ url_for('lender_ops') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
+                      <i class="fas fa-list-check" style="width:14px;color:var(--accent);"></i> Ops Queue
+                    </a>
+                  </div>
+                </div>
+
+                <!-- Reports dropdown -->
+                <div style="position:relative; display:inline-block;" onmouseleave="this.querySelector('.ddmenu').style.display='none'">
+                  <a href="#" class="{{ 'active' if request.endpoint in ['loan_portfolio','loan_detail','fairness_page','models_page'] }}"
+                     onmouseenter="this.nextElementSibling.style.display='block'"
+                     onclick="var m=this.nextElementSibling; m.style.display=m.style.display==='block'?'none':'block'; return false;"
+                     style="display:flex;align-items:center;gap:.3rem;">
+                    Reports <i class="fas fa-chevron-down" style="font-size:.6rem;opacity:.7;"></i>
+                  </a>
+                  <div class="ddmenu" style="display:none;position:absolute;top:calc(100% + 6px);left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;min-width:185px;z-index:500;padding:.35rem 0;box-shadow:0 8px 24px rgba(0,0,0,.25);">
+                    <a href="{{ url_for('loan_portfolio') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
+                      <i class="fas fa-book" style="width:14px;color:var(--accent);"></i> Loan Book
+                    </a>
+                    <a href="{{ url_for('fairness_page') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
+                      <i class="fas fa-scale-balanced" style="width:14px;color:var(--accent);"></i> Fairness Audit
+                    </a>
+                    <a href="{{ url_for('models_page') }}" style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;font-size:.84rem;color:var(--text);text-decoration:none;" onmouseenter="this.style.background='var(--bg-soft)'" onmouseleave="this.style.background=''">
+                      <i class="fas fa-chart-bar" style="width:14px;color:var(--accent);"></i> Model Report
+                    </a>
+                  </div>
+                </div>
+                {% endif %}
+
                 <a href="{{ url_for('logout') }}">Sign out</a>
             </div>
             {% else %}
@@ -52,7 +104,12 @@
                     class="{{ 'active' if request.endpoint == 'ai_features_page' }}">How It Works</a>
                 <a href="{{ url_for('about_page') }}"
                     class="{{ 'active' if request.endpoint == 'about_page' }}">About</a>
-                <a href="{{ url_for('login') }}">Sign in</a>
+                <a href="{{ url_for('borrower_portal') }}"
+                    class="{{ 'active' if request.endpoint == 'borrower_portal' }}"
+                    style="color:var(--good)">
+                    <i class="fas fa-user" style="font-size:.75rem;margin-right:.2rem;"></i> Borrowers
+                </a>
+                <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm" style="padding:.35rem .9rem;">Bank / Lender sign in</a>
             </div>
             {% endif %}
 
@@ -128,7 +185,7 @@
         }
     </script>
     {% if session.get('logged_in') %}
-    <script>{ { chatbot_assets.js | safe } }</script>{% endif %}
+    <script>{{ chatbot_assets.js | safe }}</script>{% endif %}
     {% block scripts %}{% endblock %}
 </body>
 

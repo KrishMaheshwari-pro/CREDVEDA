@@ -51,6 +51,38 @@
         </div>
     </div>
 
+    <!-- Geography and sector charts -->
+    <div class="grid grid-2 mb-3">
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0"><i class="fas fa-map-location-dot" style="color:var(--brand)"></i> Credit access by geography</p>
+                    <p class="card-sub">Average score &amp; thin-file rate by tier — the credit desert signal</p>
+                </div>
+            </div>
+            <div style="height:240px;"><canvas id="geoChart"></canvas></div>
+            {% if thin_by_geo %}
+            <div style="display:flex; gap:.75rem; flex-wrap:wrap; margin-top:.75rem;">
+            {% for tier, rate in thin_by_geo.items() %}
+            <div style="font-size:.78rem; color:var(--text-dim);">
+                <span style="color:var(--text-faint);">{{ tier }} thin-file:</span>
+                <strong style="color:{{ '#ef4444' if rate > 40 else ('#f59e0b' if rate > 25 else '#22c55e') }}">{{ rate }}%</strong>
+            </div>
+            {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <p class="card-title mb-0"><i class="fas fa-industry" style="color:var(--brand)"></i> Sector approval rates</p>
+                    <p class="card-sub">Top 8 sectors by applicant volume</p>
+                </div>
+            </div>
+            <div style="height:240px;"><canvas id="sectorChart"></canvas></div>
+        </div>
+    </div>
+
     <form method="get" class="card mb-3">
         <div class="card-head" style="margin-bottom:14px">
             <p class="card-title mb-0"><i class="fas fa-filter" style="color:var(--text-faint)"></i> Filters</p>
@@ -207,12 +239,86 @@
 
 {% block scripts %}
 <script>
-    const scores = {{ scores_list|default('[]')|safe }};
+    const scores = {{ scores_list|tojson }};
     const threshold = {{ approval_threshold }};
     
+    const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+    // Geography chart
+    const geoData = {{ geo_data | tojson }};
+    if (geoData && geoData.length) {
+        new Chart(document.getElementById('geoChart'), {
+            type: 'bar',
+            data: {
+                labels: geoData.map(d => d.label),
+                datasets: [{
+                    label: 'Avg score',
+                    data: geoData.map(d => d.avg_score),
+                    backgroundColor: ['rgba(239,68,68,.75)', 'rgba(245,158,11,.75)', 'rgba(34,197,94,.75)', 'rgba(79,140,255,.75)'],
+                    borderRadius: 6,
+                    yAxisID: 'y1',
+                }, {
+                    type: 'line',
+                    label: 'Approval rate %',
+                    data: geoData.map(d => d.approval_rate),
+                    borderColor: '#a78bfa', backgroundColor: 'transparent',
+                    pointBackgroundColor: '#a78bfa', pointRadius: 5,
+                    yAxisID: 'y2',
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#8b949e', font:{size:11} } } },
+                scales: {
+                    x: { ticks:{color:'#8b949e'}, grid:{display:false} },
+                    y1: { beginAtZero: false, min: 400, max: 900, position:'left',
+                          ticks:{color:'#8b949e', font:{size:10}},
+                          title:{display:true,text:'Avg Score',color:'#8b949e',font:{size:10}},
+                          grid:{color:'#30363d'} },
+                    y2: { beginAtZero: true, max: 100, position:'right',
+                          ticks:{color:'#a78bfa',font:{size:10},callback:v=>v+'%'},
+                          title:{display:true,text:'Approval %',color:'#a78bfa',font:{size:10}},
+                          grid:{display:false} }
+                }
+            }
+        });
+    }
+
+    // Sector chart
+    const sectorData = {{ sector_data | tojson }};
+    if (sectorData && sectorData.length) {
+        new Chart(document.getElementById('sectorChart'), {
+            type: 'bar',
+            data: {
+                labels: sectorData.map(d => d.label),
+                datasets: [{
+                    label: 'Approval rate %',
+                    data: sectorData.map(d => d.approval_rate),
+                    backgroundColor: sectorData.map(d =>
+                        d.approval_rate >= 70 ? 'rgba(34,197,94,.75)' :
+                        d.approval_rate >= 50 ? 'rgba(245,158,11,.75)' : 'rgba(239,68,68,.75)'
+                    ),
+                    borderRadius: 6,
+                }]
+            },
+            options: {
+                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                plugins: { legend:{display:false}, tooltip:{callbacks:{
+                    label: c => c.parsed.x.toFixed(1) + '% approval · ' + sectorData[c.dataIndex].count + ' applicants'
+                }}},
+                scales: {
+                    x: { beginAtZero:true, max:100,
+                         ticks:{color:'#8b949e',font:{size:10},callback:v=>v+'%'},
+                         grid:{color:'#30363d'} },
+                    y: { ticks:{color:'#c9d1d9',font:{size:11}}, grid:{display:false} }
+                }
+            }
+        });
+    }
+
     if (scores && scores.length > 0) {
-        // Prepare histogram data
-        const bins = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+        // Prepare histogram data — 300-900 scale with 60-point bins
+        const bins = [300, 360, 420, 480, 540, 600, 660, 720, 780, 840, 900];
         const counts = new Array(10).fill(0);
         let approvedCount = 0;
         let rejectedCount = 0;
@@ -221,16 +327,12 @@
             const score = s.score;
             if (score >= threshold && !s.guardrail_blocked) approvedCount++;
             else rejectedCount++;
-            
             for (let i = 0; i < 10; i++) {
-                if (score >= bins[i] && score < bins[i+1]) {
-                    counts[i]++;
-                    break;
-                }
+                if (score >= bins[i] && score < bins[i+1]) { counts[i]++; break; }
             }
         });
 
-        const labels = bins.slice(0, 10).map((b, i) => `${b}-${bins[i+1]}`);
+        const labels = bins.slice(0, 10).map((b, i) => `${b}–${bins[i+1]}`);
 
         // Score Distribution Chart
         new Chart(document.getElementById('scoreDistChart'), {

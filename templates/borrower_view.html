@@ -1,199 +1,377 @@
 {% extends "base.html" %}
-{% block title %}Your credit assessment — CredVeda{% endblock %}
+{% block title %}Your Credit Assessment — CredVeda{% endblock %}
+{% block head_extra %}
+<style>
+.lang-btn {
+  padding: 5px 14px; border-radius: 6px; font-size: .8rem; font-weight: 600;
+  border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer;
+  transition: all .15s;
+}
+.lang-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+[data-lang] { transition: opacity .2s; }
+
+/* Trajectory chart styles */
+.traj-wrap { position: relative; }
+
+/* Scheme card */
+.scheme-row {
+  display: flex; align-items: center; gap: .85rem;
+  padding: .75rem 0; border-bottom: 1px solid var(--border);
+}
+.scheme-row:last-child { border-bottom: none; }
+</style>
+{% endblock %}
+
 {% block content %}
 
 {% set critical = result.guardrail_flags | selectattr('severity', 'equalto', 'critical') | list %}
 {% set helped = result.reason_codes | selectattr('impact', 'equalto', 'positive') | list %}
 {% set hurt   = result.reason_codes | selectattr('impact', 'equalto', 'negative') | list %}
 
-<div class="container-narrow">
+<div class="container-narrow" style="max-width:720px;">
 
-    <div class="card-head mb-3">
-        <a href="{{ url_for('applicant_detail', applicant_id=applicant.applicant_id) }}" class="faint" style="font-size:.875rem">
-            <i class="fas fa-arrow-left"></i> Back to the lender view
-        </a>
-        <button onclick="window.print()" class="btn btn-ghost btn-sm"><i class="fas fa-print"></i> Print</button>
+  <!-- Top nav -->
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; flex-wrap:wrap; gap:.5rem;">
+    <a href="{{ url_for('applicant_detail', applicant_id=applicant.applicant_id) }}" class="faint" style="font-size:.875rem">
+      <i class="fas fa-arrow-left"></i> Back to lender view
+    </a>
+    <div style="display:flex; gap:.5rem; align-items:center;">
+      <!-- Language toggle -->
+      <button class="lang-btn active" onclick="setLang('en', this)" id="btn-en">English</button>
+      <button class="lang-btn" onclick="setLang('hi', this)" id="btn-hi">हिन्दी</button>
+      <button onclick="window.print()" class="btn btn-ghost btn-sm"><i class="fas fa-print"></i></button>
     </div>
+  </div>
 
-    <div class="alert alert-info mb-3">
-        <span class="alert-icon"><i class="fas fa-user"></i></span>
+  <div class="alert alert-info mb-3">
+    <span class="alert-icon"><i class="fas fa-user"></i></span>
+    <div class="alert-body">
+      <p class="alert-title" data-lang="en">This is what the applicant sees</p>
+      <p class="alert-title" data-lang="hi" style="display:none;">यह आवेदक को दिखाया जाता है</p>
+      <p class="alert-text" data-lang="en">Every model term removed — written so the person can understand and act on it.</p>
+      <p class="alert-text" data-lang="hi" style="display:none;">सभी तकनीकी शब्द हटा दिए गए हैं — सरल भाषा में लिखा गया है।</p>
+    </div>
+  </div>
+
+  <!-- Score card -->
+  <div class="card mb-3" style="text-align:center; padding:2rem 1.5rem;">
+    <p class="stat-label mb-2" data-lang="en">Your credit assessment</p>
+    <p class="stat-label mb-2" data-lang="hi" style="display:none;">आपका क्रेडिट मूल्यांकन</p>
+
+    {% if result.band_first %}
+      <p class="gauge-range mb-1" style="color:var(--{{ result.tier_tone }})">{{ result.band_low }}–{{ result.band_high }}</p>
+      <p class="muted mb-3" style="font-size:.875rem;" data-lang="en">
+        We've given you a range instead of a single number because we could only see part of your financial history.
+        Share more bank statements or GST filings to get a precise number.
+      </p>
+      <p class="muted mb-3" style="font-size:.875rem; display:none;" data-lang="hi">
+        हमने आपको एक रेंज दी है क्योंकि हम आपकी पूरी वित्तीय जानकारी नहीं देख पाए।
+        बैंक स्टेटमेंट या GST फाइलिंग शेयर करें ताकि एक सटीक नंबर मिले।
+      </p>
+    {% else %}
+      <p class="gauge-score mb-1" style="color:var(--{{ result.tier_tone }})">{{ result.credit_score }}</p>
+      <span class="chip chip-{{ result.tier_tone }} mb-3">{{ result.tier_label }}</span>
+      <p style="font-size:.8rem; color:var(--muted); margin-top:.5rem;">out of 900</p>
+    {% endif %}
+
+    {% if critical %}
+      <div class="alert alert-warn" style="text-align:left; margin:.75rem 0 0;">
+        <span class="alert-icon"><i class="fas fa-hand"></i></span>
         <div class="alert-body">
-            <p class="alert-title">This is what the applicant sees</p>
-            <p class="alert-text">The same decision, with every model term removed — written so the person receiving
-            it can understand and act on it. This is the artefact that justifies a rejection to the applicant.</p>
+          <p class="alert-title" data-lang="en">We can't offer this amount right now</p>
+          <p class="alert-title" data-lang="hi" style="display:none;">हम अभी इतनी राशि नहीं दे सकते</p>
+          <p class="alert-text" data-lang="en">The repayments on the amount you asked for would take up too much of your monthly income.
+            A smaller amount, or the same amount over a longer period, would likely work.</p>
+          <p class="alert-text" data-lang="hi" style="display:none;">आपने जो राशि मांगी है उसकी EMI आपकी मासिक आय का बहुत बड़ा हिस्सा ले लेगी।
+            कम राशि या लंबी अवधि से यह काम हो सकता है।</p>
         </div>
+      </div>
+    {% elif result.approved %}
+      <div class="alert alert-ok" style="text-align:left; margin:.75rem 0 0;">
+        <span class="alert-icon"><i class="fas fa-circle-check"></i></span>
+        <div class="alert-body">
+          <p class="alert-title" data-lang="en">Good news — you meet our criteria</p>
+          <p class="alert-title" data-lang="hi" style="display:none;">अच्छी खबर — आप हमारी शर्तें पूरी करते हैं</p>
+          <p class="alert-text" data-lang="en">Your everyday financial behaviour is strong enough to move forward.</p>
+          <p class="alert-text" data-lang="hi" style="display:none;">आपकी रोज़मर्रा की वित्तीय गतिविधि इतनी मज़बूत है कि आगे बढ़ा जा सकता है।</p>
+        </div>
+      </div>
+    {% else %}
+      <div class="alert alert-warn" style="text-align:left; margin:.75rem 0 0;">
+        <span class="alert-icon"><i class="fas fa-circle-info"></i></span>
+        <div class="alert-body">
+          <p class="alert-title" data-lang="en">Not yet — but here's exactly why</p>
+          <p class="alert-title" data-lang="hi" style="display:none;">अभी नहीं — लेकिन यहाँ बताया गया है कि क्यों</p>
+          <p class="alert-text" data-lang="en">You're below the score we need right now.
+            The reasons and the top 3 steps to change this are below.</p>
+          <p class="alert-text" data-lang="hi" style="display:none;">आपका स्कोर अभी हमारी ज़रूरत से कम है।
+            नीचे कारण और उन्हें बदलने के 3 सबसे आसान कदम हैं।</p>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Active loan -->
+  {% if active_loan %}
+  {% set paid = schedule | selectattr('status', 'in', ['paid', 'late']) | list | length %}
+  {% set remaining = active_loan['tenure_months'] - paid %}
+  <div class="card mb-3">
+    <div class="card-head">
+      <div>
+        <p class="card-title mb-0"><i class="fas fa-file-invoice-dollar" style="color:var(--brand)"></i>
+          <span data-lang="en">Your loan</span>
+          <span data-lang="hi" style="display:none;">आपका ऋण</span>
+        </p>
+        <p class="card-sub">₹{{ '{:,.0f}'.format(active_loan['principal']) }} · {{ active_loan['tenure_months'] }} months</p>
+      </div>
+      <span class="chip chip-info">{{ paid }} / {{ active_loan['tenure_months'] }} paid</span>
     </div>
-
-    <!-- The decision -->
-    <div class="card mb-3" style="text-align:center;padding:34px 24px">
-        <p class="stat-label mb-2">Your credit assessment</p>
-
-        {% if result.band_first %}
-            <p class="gauge-range mb-1" style="color:var(--{{ result.tier_tone }})">{{ result.band_low }}–{{ result.band_high }}</p>
-            <p class="muted mb-3" style="font-size:.875rem">
-                We've given you a range rather than a single number, because we could only see part of your
-                financial history. The more of it you can share, the more precise this gets.
-            </p>
-        {% else %}
-            <p class="gauge-score mb-1" style="color:var(--{{ result.tier_tone }})">{{ result.credit_score }}</p>
-            <p class="chip chip-{{ result.tier_tone }} mb-3">{{ result.tier_label }}</p>
-        {% endif %}
-
-        {% if critical %}
-            <div class="alert alert-warn" style="text-align:left;margin:0">
-                <span class="alert-icon"><i class="fas fa-hand"></i></span>
-                <div class="alert-body">
-                    <p class="alert-title">We can't offer this amount right now</p>
-                    <p class="alert-text">
-                        Based on what we can see of your monthly money coming in and going out, the repayments on
-                        the amount you asked for would take up too much of what you have left each month. That's a
-                        risk to you, not just to us. <strong>A smaller amount, or the same amount spread over a
-                        longer period, would likely work.</strong>
-                    </p>
-                </div>
-            </div>
-        {% elif result.approved %}
-            <div class="alert alert-ok" style="text-align:left;margin:0">
-                <span class="alert-icon"><i class="fas fa-circle-check"></i></span>
-                <div class="alert-body">
-                    <p class="alert-title">Good news — you meet our criteria</p>
-                    <p class="alert-text">Your everyday financial behaviour is strong enough to move forward with your application.</p>
-                </div>
-            </div>
-        {% else %}
-            <div class="alert alert-warn" style="text-align:left;margin:0">
-                <span class="alert-icon"><i class="fas fa-circle-info"></i></span>
-                <div class="alert-body">
-                    <p class="alert-title">Not yet — but here's exactly why</p>
-                    <p class="alert-text">
-                        You're below the score we currently need for this product. Nothing about this is permanent —
-                        the reasons are listed below, and the three steps at the bottom are the fastest way to change it.
-                    </p>
-                </div>
-            </div>
-        {% endif %}
+    <div class="bandbar mb-3">
+      <div class="bandbar-track" style="background:var(--surface-3);opacity:1">
+        <div class="bandbar-range" style="left:0;width:{{ (paid / active_loan['tenure_months'] * 100)|round(1) }}%;background:var(--good)"></div>
+      </div>
     </div>
-
-    <!-- Active loan -->
-    {% if active_loan %}
-    {% set paid = schedule | selectattr('status', 'in', ['paid', 'late']) | list | length %}
-    {% set remaining = active_loan['tenure_months'] - paid %}
-    <div class="card mb-3">
-        <div class="card-head">
-            <div>
-                <p class="card-title mb-0"><i class="fas fa-file-invoice-dollar" style="color:var(--brand)"></i> Your loan</p>
-                <p class="card-sub">₹{{ '{:,.0f}'.format(active_loan['principal']) }} over {{ active_loan['tenure_months'] }} months</p>
-            </div>
-            <span class="chip chip-info">{{ paid }} of {{ active_loan['tenure_months'] }} paid</span>
-        </div>
-
-        <div class="bandbar mb-3">
-            <div class="bandbar-track" style="background:var(--surface-3);opacity:1">
-                <div class="bandbar-range" style="left:0;width:{{ (paid / active_loan['tenure_months'] * 100)|round(1) }}%;background:var(--good)"></div>
-            </div>
-        </div>
-
-        <div class="grid grid-3">
-            <div>
-                <p class="stat-label">Your monthly payment</p>
-                <p class="stat-value" style="font-size:1.5rem">₹{{ '{:,.0f}'.format(active_loan['monthly_emi']) }}</p>
-            </div>
-            <div>
-                <p class="stat-label">Payments left</p>
-                <p class="stat-value" style="font-size:1.5rem">{{ remaining }}</p>
-            </div>
-            <div>
-                <p class="stat-label">Paid on time so far</p>
-                <p class="stat-value" style="font-size:1.5rem;color:var(--good)">{{ result.repayment_adjustment.history.paid if result.repayment_adjustment else 0 }}</p>
-            </div>
-        </div>
-
-        {% if result.repayment_adjustment and result.repayment_adjustment.points > 0 %}
-        <div class="alert alert-ok mt-3" style="margin-bottom:0">
-            <span class="alert-icon"><i class="fas fa-arrow-trend-up"></i></span>
-            <div class="alert-body">
-                <p class="alert-title">Your repayments are already helping your score</p>
-                <p class="alert-text">Paying on time has added <strong>{{ result.repayment_adjustment.points }} points</strong>
-                to your score so far. Keep it going — every on-time payment counts towards what you can borrow next time.</p>
-            </div>
-        </div>
-        {% elif result.repayment_adjustment and result.repayment_adjustment.points < 0 %}
-        <div class="alert alert-warn mt-3" style="margin-bottom:0">
-            <span class="alert-icon"><i class="fas fa-triangle-exclamation"></i></span>
-            <div class="alert-body">
-                <p class="alert-title">Missed payments are affecting your score</p>
-                <p class="alert-text">Your score is currently {{ result.repayment_adjustment.points * -1 }} points lower
-                because of late or missed payments. Catching up will start to recover it — please talk to us if
-                the monthly amount has become difficult.</p>
-            </div>
-        </div>
-        {% endif %}
+    <div class="grid grid-3">
+      <div>
+        <p class="stat-label" data-lang="en">Monthly payment</p>
+        <p class="stat-label" data-lang="hi" style="display:none;">मासिक भुगतान</p>
+        <p class="stat-value" style="font-size:1.5rem">₹{{ '{:,.0f}'.format(active_loan['monthly_emi']) }}</p>
+      </div>
+      <div>
+        <p class="stat-label" data-lang="en">Payments left</p>
+        <p class="stat-label" data-lang="hi" style="display:none;">बाकी किश्तें</p>
+        <p class="stat-value" style="font-size:1.5rem">{{ remaining }}</p>
+      </div>
+      <div>
+        <p class="stat-label" data-lang="en">On-time payments</p>
+        <p class="stat-label" data-lang="hi" style="display:none;">समय पर भुगतान</p>
+        <p class="stat-value" style="font-size:1.5rem;color:var(--good)">{{ result.repayment_adjustment.history.paid if result.repayment_adjustment else 0 }}</p>
+      </div>
+    </div>
+    {% if result.repayment_adjustment and result.repayment_adjustment.points > 0 %}
+    <div class="alert alert-ok mt-3" style="margin-bottom:0">
+      <span class="alert-icon"><i class="fas fa-arrow-trend-up"></i></span>
+      <div class="alert-body">
+        <p class="alert-title" data-lang="en">Your repayments are already improving your score</p>
+        <p class="alert-title" data-lang="hi" style="display:none;">आपके पुनर्भुगतान से स्कोर पहले से बेहतर हो रहा है</p>
+        <p class="alert-text" data-lang="en">Paying on time has added <strong>{{ result.repayment_adjustment.points }} points</strong> so far.</p>
+        <p class="alert-text" data-lang="hi" style="display:none;">समय पर भुगतान से अब तक <strong>{{ result.repayment_adjustment.points }} अंक</strong> जुड़ गए हैं।</p>
+      </div>
     </div>
     {% endif %}
+  </div>
+  {% endif %}
 
-    <!-- Why -->
-    <div class="grid grid-2 grid-top mb-3">
-        <div class="card">
-            <p class="card-title" style="color:var(--good)"><i class="fas fa-thumbs-up"></i> What worked in your favour</p>
-            {% for r in helped %}
-            <div class="reason">
-                <span class="reason-mark reason-up">+</span>
-                <div class="reason-body"><p class="reason-text" style="color:var(--text)">{{ r.text }}</p></div>
-            </div>
-            {% else %}
-            <p class="muted mb-0">We couldn't find strong positives in the information available to us.</p>
-            {% endfor %}
-        </div>
-
-        <div class="card">
-            <p class="card-title" style="color:var(--bad)"><i class="fas fa-thumbs-down"></i> What counted against you</p>
-            {% for r in hurt %}
-            <div class="reason">
-                <span class="reason-mark reason-down">−</span>
-                <div class="reason-body"><p class="reason-text" style="color:var(--text)">{{ r.text }}</p></div>
-            </div>
-            {% else %}
-            <p class="muted mb-0">Nothing counted significantly against you.</p>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- What to do -->
-    {% if result.improvement_path %}
-    <div class="card mb-3">
-        <div class="card-head">
-            <div>
-                <p class="card-title mb-0"><i class="fas fa-arrow-trend-up" style="color:var(--good)"></i> How to improve your score</p>
-                <p class="card-sub">These are the changes that would move your score the most over the next six months</p>
-            </div>
-        </div>
-        <div class="grid" style="gap:12px">
-            {% for imp in result.improvement_path %}
-            <div class="lever">
-                <span class="lever-gain">{{ loop.index }}</span>
-                <div>
-                    <p class="lever-label">{{ imp.label }}</p>
-                    <p class="lever-note">Keeping this up for about six months could raise your score by around
-                    <strong style="color:var(--good)">{{ imp.estimated_point_gain }} points</strong>.</p>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
+  <!-- Why: positives and negatives -->
+  <div class="grid grid-2 grid-top mb-3">
     <div class="card">
-        <p class="card-title"><i class="fas fa-shield-halved" style="color:var(--brand)"></i> How this decision was made</p>
-        <p class="mb-2">
-            We looked at your everyday financial activity — money moving through your account, whether bills and
-            rent get paid on time, your GST filings if you have them, how long you've been trading, and how much
-            you already repay each month.
-        </p>
-        <p class="mb-0">
-            <strong>Your gender, your location and the type of work you do were not used to calculate this score.</strong>
-            We test our system regularly to check it isn't unfairly harsher on any group of people.
-        </p>
+      <p class="card-title" style="color:var(--good)">
+        <i class="fas fa-thumbs-up"></i>
+        <span data-lang="en">What worked for you</span>
+        <span data-lang="hi" style="display:none;">आपके पक्ष में क्या रहा</span>
+      </p>
+      {% for r in helped %}
+      <div class="reason">
+        <span class="reason-mark reason-up">+</span>
+        <div class="reason-body">
+          <p class="reason-text" style="color:var(--text)" data-lang="en">{{ r.text }}</p>
+          <p class="reason-text" style="color:var(--text); display:none;" data-lang="hi">{{ r.text_hi if r.text_hi else r.text }}</p>
+        </div>
+      </div>
+      {% else %}
+      <p class="muted mb-0" data-lang="en">No strong positives in the data we have.</p>
+      <p class="muted mb-0" style="display:none;" data-lang="hi">उपलब्ध डेटा में कोई मजबूत सकारात्मक पहलू नहीं।</p>
+      {% endfor %}
     </div>
+    <div class="card">
+      <p class="card-title" style="color:var(--bad)">
+        <i class="fas fa-thumbs-down"></i>
+        <span data-lang="en">What counted against you</span>
+        <span data-lang="hi" style="display:none;">आपके विरुद्ध क्या गया</span>
+      </p>
+      {% for r in hurt %}
+      <div class="reason">
+        <span class="reason-mark reason-down">−</span>
+        <div class="reason-body">
+          <p class="reason-text" style="color:var(--text)" data-lang="en">{{ r.text }}</p>
+          <p class="reason-text" style="color:var(--text); display:none;" data-lang="hi">{{ r.text_hi if r.text_hi else r.text }}</p>
+        </div>
+      </div>
+      {% else %}
+      <p class="muted mb-0" data-lang="en">Nothing counted significantly against you.</p>
+      <p class="muted mb-0" style="display:none;" data-lang="hi">आपके विरुद्ध कोई खास बात नहीं।</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Improvement path + 6-month trajectory -->
+  {% if result.improvement_path %}
+  <div class="card mb-3">
+    <div class="card-head">
+      <div>
+        <p class="card-title mb-0"><i class="fas fa-arrow-trend-up" style="color:var(--good)"></i>
+          <span data-lang="en">How to improve your score in 6 months</span>
+          <span data-lang="hi" style="display:none;">6 महीनों में अपना स्कोर कैसे सुधारें</span>
+        </p>
+        <p class="card-sub" data-lang="en">Three concrete actions, ranked by impact</p>
+        <p class="card-sub" data-lang="hi" style="display:none;">तीन व्यावहारिक कदम, प्रभाव के अनुसार क्रमित</p>
+      </div>
+    </div>
+
+    {% for imp in result.improvement_path %}
+    <div class="lever">
+      <span class="lever-gain">{{ loop.index }}</span>
+      <div>
+        <p class="lever-label" data-lang="en">{{ imp.label }}</p>
+        <p class="lever-label" data-lang="hi" style="display:none;">{{ imp.label_hi if imp.label_hi else imp.label }}</p>
+        <p class="lever-note" data-lang="en">
+          {{ imp.action_en if imp.action_en else 'Maintain this behaviour for ~6 months.' }}
+          Can add up to <strong style="color:var(--good)">{{ imp.estimated_point_gain }} points</strong>.
+        </p>
+        <p class="lever-note" data-lang="hi" style="display:none;">
+          {{ imp.action_hi if imp.action_hi else '~6 महीने यह व्यवहार बनाए रखें।' }}
+          इससे <strong style="color:var(--good)">{{ imp.estimated_point_gain }} अंक</strong> तक जुड़ सकते हैं।
+        </p>
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- 6-month trajectory chart -->
+    <div style="margin-top:1rem;">
+      <p class="card-sub" style="margin-bottom:.5rem;" data-lang="en">Projected score trajectory if you take these steps</p>
+      <p class="card-sub" style="margin-bottom:.5rem; display:none;" data-lang="hi">यदि आप ये कदम उठाते हैं तो अनुमानित स्कोर</p>
+      <canvas id="trajChart" height="120"></canvas>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Eligible loan schemes -->
+  {% if matched_products %}
+  <div class="card mb-3">
+    <div class="card-head">
+      <div>
+        <p class="card-title mb-0"><i class="fas fa-landmark" style="color:var(--brand)"></i>
+          <span data-lang="en">Government schemes you may qualify for</span>
+          <span data-lang="hi" style="display:none;">सरकारी योजनाएँ जिनके लिए आप पात्र हो सकते हैं</span>
+        </p>
+        <p class="card-sub" data-lang="en">Based on your score and profile — ask your lender to apply</p>
+        <p class="card-sub" data-lang="hi" style="display:none;">आपके स्कोर और प्रोफाइल के आधार पर — आवेदन के लिए अपने बैंक से संपर्क करें</p>
+      </div>
+    </div>
+    {% for p in matched_products %}
+    <div class="scheme-row">
+      <span style="background:{{ p.tag_color or '#4f8cff' }}; color:#fff;
+                   padding:3px 10px; border-radius:5px; font-size:.72rem; font-weight:700;
+                   white-space:nowrap; flex-shrink:0;">{{ p.tag or p.scheme_id }}</span>
+      <div style="flex:1;">
+        <div style="font-weight:700; font-size:.88rem;">{{ p.name }}</div>
+        <div style="font-size:.76rem; color:var(--muted);" data-lang="en">
+          Up to ₹{{ '{:,.0f}'.format(p.max_loan_inr) }} · {{ p.interest_rate }}% p.a. · {{ p.max_tenure_months }} months
+        </div>
+        <div style="font-size:.76rem; color:var(--muted); display:none;" data-lang="hi">
+          ₹{{ '{:,.0f}'.format(p.max_loan_inr) }} तक · {{ p.interest_rate }}% वार्षिक · {{ p.max_tenure_months }} महीने
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% if thin_pathway and thin_pathway.get('eligible') %}
+    <div style="background:rgba(79,140,255,.08); border:1px solid #4f8cff40; border-radius:8px;
+                padding:.75rem; margin-top:.75rem; font-size:.8rem; color:var(--text-dim);">
+      <strong data-lang="en">Thin-file first-loan pathway:</strong>
+      <strong data-lang="hi" style="display:none;">पहला ऋण (पतला फ़ाइल) मार्ग:</strong>
+      <span data-lang="en"> {{ thin_pathway.message_en }}</span>
+      <span data-lang="hi" style="display:none;"> {{ thin_pathway.message_hi if thin_pathway.message_hi else thin_pathway.message_en }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- How the decision was made -->
+  <div class="card">
+    <p class="card-title">
+      <i class="fas fa-shield-halved" style="color:var(--brand)"></i>
+      <span data-lang="en">How this decision was made</span>
+      <span data-lang="hi" style="display:none;">यह निर्णय कैसे लिया गया</span>
+    </p>
+    <p class="mb-2" data-lang="en">
+      We looked at your everyday financial activity — money moving through your account, whether bills
+      and rent were paid on time, your GST filings if available, how long you've been trading,
+      and how much you already repay each month.
+    </p>
+    <p class="mb-2" data-lang="hi" style="display:none;">
+      हमने आपकी रोज़मर्रा की वित्तीय गतिविधि देखी — खाते में पैसों का आना-जाना, बिल और किराया समय पर
+      भरा या नहीं, GST फाइलिंग (यदि उपलब्ध हो), आप कितने समय से व्यापार कर रहे हैं,
+      और आप हर महीने पहले से कितना चुका रहे हैं।
+    </p>
+    <p class="mb-0" data-lang="en">
+      <strong>Your gender, your location, and the type of work you do were not used to calculate this score.</strong>
+      We test our system regularly to make sure it treats everyone fairly.
+    </p>
+    <p class="mb-0" data-lang="hi" style="display:none;">
+      <strong>आपका लिंग, आपका स्थान, और आपके काम का प्रकार — ये सब इस स्कोर की गणना में उपयोग नहीं किए गए।</strong>
+      हम नियमित रूप से जाँचते हैं कि हमारी प्रणाली सभी के साथ निष्पक्ष व्यवहार करती है।
+    </p>
+  </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Language toggle */
+function setLang(lang, btn) {
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('[data-lang]').forEach(el => {
+    el.style.display = el.dataset.lang === lang ? '' : 'none';
+  });
+}
+
+/* 6-month trajectory chart */
+{% if result.improvement_path %}
+const baseScore = {{ result.credit_score }};
+const maxGain = {{ result.improvement_path | map(attribute='estimated_point_gain') | sum }};
+const months = [0, 1, 2, 3, 4, 5, 6];
+const gains = months.map(m => Math.round(m / 6 * maxGain));
+const trajectory = gains.map(g => Math.min({{ score_max }}, baseScore + g));
+const noAction = months.map(() => baseScore);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+const ctx = document.getElementById('trajChart');
+if (ctx) {
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: ['Now', 'Mo 1', 'Mo 2', 'Mo 3', 'Mo 4', 'Mo 5', 'Mo 6'],
+      datasets: [{
+        label: 'With improvements',
+        data: trajectory,
+        borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.1)',
+        fill: true, tension: 0.35, pointRadius: 4, pointBackgroundColor: '#22c55e',
+      }, {
+        label: 'No change',
+        data: noAction,
+        borderColor: '#8b949e', borderDash: [4, 4], pointRadius: 0, fill: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#8b949e', font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y } }
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 11 } }, grid: { display: false } },
+        y: {
+          min: Math.max({{ score_min }}, baseScore - 20),
+          max: Math.min({{ score_max }}, baseScore + maxGain + 30),
+          ticks: { color: '#8b949e', font: { size: 11 } },
+          grid: { color: '#30363d' }
+        }
+      }
+    }
+  });
+}
+{% endif %}
+</script>
 {% endblock %}

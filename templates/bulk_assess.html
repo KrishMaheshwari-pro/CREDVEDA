@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}Bulk Batch Assessment — CredVeda{% endblock %}
+{% block head_extra %}
+<style>
+.tier-good { color: #22c55e; }
+.tier-warn { color: #f59e0b; }
+.tier-bad  { color: #ef4444; }
+.sev-CRITICAL { color: #ef4444; font-weight: 700; }
+.sev-WARNING  { color: #f59e0b; font-weight: 600; }
+.sev-CLEAR    { color: #22c55e; }
+.upload-zone {
+  border: 2px dashed var(--border); border-radius: 12px;
+  padding: 2.5rem 1.5rem; text-align: center; cursor: pointer;
+  transition: border-color .2s;
+}
+.upload-zone:hover { border-color: var(--accent); }
+.result-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.result-table th {
+  text-align: left; padding: .5rem .75rem;
+  background: var(--surface); color: var(--muted);
+  font-weight: 600; font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .06em; white-space: nowrap;
+  border-bottom: 2px solid var(--border);
+}
+.result-table td {
+  padding: .5rem .75rem; border-bottom: 1px solid var(--border);
+  vertical-align: middle; white-space: nowrap;
+}
+.result-table tr:hover td { background: var(--surface); }
+.rate-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 10px;
+  font-size: .75rem; font-weight: 700;
+  background: rgba(79,140,255,.12); color: #4f8cff;
+  border: 1px solid #4f8cff44;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:1200px; padding-top:2rem; padding-bottom:3rem;">
+  <div style="margin-bottom:1.75rem;">
+    <h1 style="font-size:1.85rem; font-weight:800; margin-bottom:.35rem;">Bulk Batch Assessment</h1>
+    <p style="color:var(--muted); max-width:65ch;">
+      Upload a CSV of up to 500 applicants and score them all in one pass.
+      The engine runs the full alternative-credit model on each row — same engine, same guardrails,
+      same scheme matching as the individual assessment.
+    </p>
+  </div>
+
+  {% if error %}
+  <div style="background:rgba(239,68,68,.1); border:1px solid #ef4444; border-radius:8px;
+              padding:.85rem 1rem; margin-bottom:1.25rem; color:#ef4444; font-size:.87rem;">
+    <i class="fas fa-exclamation-triangle"></i> {{ error }}
+  </div>
+  {% endif %}
+
+  <!-- Upload form -->
+  <div class="card" style="padding:1.4rem; margin-bottom:1.75rem;">
+    <form method="post" enctype="multipart/form-data" id="uploadForm">
+      <div class="upload-zone" onclick="document.getElementById('csv_file').click();">
+        <i class="fas fa-file-csv" style="font-size:2rem; color:var(--accent); margin-bottom:.6rem;"></i>
+        <p style="font-weight:700; margin:.3rem 0 .15rem;">Click to select a CSV file</p>
+        <p style="font-size:.8rem; color:var(--muted); margin:0;">Max 500 rows · UTF-8 CSV</p>
+        <input type="file" name="csv_file" id="csv_file" accept=".csv" style="display:none;"
+               onchange="document.getElementById('filename').textContent=this.files[0]?.name||''">
+        <div id="filename" style="margin-top:.5rem; font-size:.82rem; color:var(--accent);"></div>
+      </div>
+
+      <div style="display:flex; gap:.75rem; margin-top:1rem; flex-wrap:wrap;">
+        <button type="submit" name="action" value="score" class="btn">
+          <i class="fas fa-bolt"></i> Score all applicants
+        </button>
+        {% if results %}
+        <button type="submit" name="action" value="download" class="btn" style="background:none; border:1px solid var(--accent); color:var(--accent);">
+          <i class="fas fa-download"></i> Download results CSV
+        </button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  <!-- CSV format guide -->
+  <div class="card" style="padding:1.25rem; margin-bottom:1.75rem;" id="formatGuide">
+    <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;"
+         onclick="document.getElementById('formatBody').classList.toggle('hidden');">
+      <span style="font-weight:700; font-size:.92rem;">
+        <i class="fas fa-table"></i> Required CSV columns
+      </span>
+      <i class="fas fa-chevron-down"></i>
+    </div>
+    <div id="formatBody" style="margin-top:.85rem;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+        <div>
+          <div style="font-size:.75rem; font-weight:700; color:var(--accent); text-transform:uppercase;
+                      letter-spacing:.06em; margin-bottom:.5rem;">Required</div>
+          {% for f in required_fields %}
+          <code style="display:block; font-size:.78rem; color:var(--text);
+                       padding:2px 0; border-bottom:1px solid var(--border);">{{ f }}</code>
+          {% endfor %}
+        </div>
+        <div>
+          <div style="font-size:.75rem; font-weight:700; color:var(--muted); text-transform:uppercase;
+                      letter-spacing:.06em; margin-bottom:.5rem;">Optional (leave blank if unknown)</div>
+          {% for f in optional_fields %}
+          <code style="display:block; font-size:.78rem; color:var(--muted);
+                       padding:2px 0; border-bottom:1px solid var(--border);">{{ f }}</code>
+          {% endfor %}
+        </div>
+      </div>
+      <p style="font-size:.78rem; color:var(--muted); margin:.75rem 0 0;">
+        <strong>entity_type</strong> must be <code>Small Business</code> or <code>Individual</code>.
+        Missing optional columns default to safe neutral values — the model handles thin files gracefully.
+      </p>
+    </div>
+  </div>
+
+  <!-- Results -->
+  {% if results %}
+  <!-- Summary strip -->
+  <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:.75rem; margin-bottom:1.5rem;">
+    {% for val, lbl, color in [
+      (n_total, 'Scored', '#4f8cff'),
+      (n_approved, 'Approved', '#22c55e'),
+      (n_critical, 'Critical guardrails', '#ef4444'),
+      (n_thin, 'Thin-file', '#f59e0b'),
+      (avg_score, 'Avg score', '#a78bfa'),
+    ] %}
+    <div style="background:var(--card); border:1px solid var(--border); border-radius:10px;
+                padding:1rem 1.1rem; text-align:center;">
+      <div style="font-size:1.6rem; font-weight:800; color:{{ color }};">{{ val }}</div>
+      <div style="font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;">{{ lbl }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if errors %}
+  <div style="background:rgba(239,68,68,.06); border:1px solid #ef444440; border-radius:8px;
+              padding:.75rem 1rem; margin-bottom:1.25rem; font-size:.82rem; color:var(--muted);">
+    <strong style="color:#ef4444;">{{ errors | length }} row{{ 's' if errors|length!=1 }} had errors</strong> and were skipped:
+    {% for e in errors[:5] %} Row {{ e.row }} ({{ e.applicant_id }}): {{ e.error }}.{% endfor %}
+    {% if errors|length > 5 %} …and {{ errors|length - 5 }} more.{% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Results table -->
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div style="overflow-x:auto;">
+      <table class="result-table">
+        <thead>
+          <tr>
+            <th>Applicant</th>
+            <th>Type</th>
+            <th>Score</th>
+            <th>Tier</th>
+            <th>Band</th>
+            <th>Confidence</th>
+            <th>FOIR</th>
+            <th>Guardrail</th>
+            <th>Repay prob</th>
+            <th>Rec. rate</th>
+            <th>Top reason</th>
+            <th>Top scheme</th>
+            <th>Decision</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in results %}
+          <tr>
+            <td><code style="font-size:.78rem;">{{ r.applicant_id }}</code></td>
+            <td style="color:var(--muted);">{{ r.entity_type }}</td>
+            <td style="font-weight:800;" class="tier-{{ r.tier_tone }}">{{ r.credit_score }}</td>
+            <td><span class="tier-{{ r.tier_tone }}">{{ r.tier_label }}</span></td>
+            <td style="font-size:.75rem; color:var(--muted);">{{ r.band_low }}–{{ r.band_high }}</td>
+            <td style="font-size:.75rem; color:var(--muted);">{{ r.confidence_label }}</td>
+            <td style="color:{{ '#ef4444' if r.foir_pct >= 65 else ('#f59e0b' if r.foir_pct >= 45 else '#22c55e') }}">
+              {{ r.foir_pct }}%
+            </td>
+            <td class="sev-{{ r.guardrail_severity }}">{{ r.guardrail_severity }}</td>
+            <td>{{ r.probability_good }}%</td>
+            <td><span class="rate-badge">{{ r.recommended_rate_pct }}%</span></td>
+            <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis; color:var(--muted); font-size:.78rem;">
+              {{ r.top_reason }}
+            </td>
+            <td style="font-size:.78rem; color:var(--muted);">{{ r.top_scheme }}</td>
+            <td>
+              {% if r.guardrail_severity == 'CRITICAL' %}
+              <span style="color:#ef4444; font-weight:700; font-size:.78rem;">DECLINED</span>
+              {% elif r.approved %}
+              <span style="color:#22c55e; font-weight:700; font-size:.78rem;">APPROVED</span>
+              {% else %}
+              <span style="color:#f59e0b; font-weight:700; font-size:.78rem;">REVIEW</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:1rem; text-align:right;">
+    <form method="post" enctype="multipart/form-data" style="display:inline;">
+      <input type="hidden" name="action" value="download">
+      <button type="button" onclick="downloadResults()" class="btn"
+              style="background:none; border:1px solid var(--accent); color:var(--accent); font-size:.82rem;">
+        <i class="fas fa-download"></i> Download full CSV
+      </button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function downloadResults() {
+  const form = document.getElementById('uploadForm');
+  const action = form.querySelector('[name=action]');
+  if (action) action.value = 'download';
+  form.submit();
+}
+</script>
+{% endblock %}

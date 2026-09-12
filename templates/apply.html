@@ -22,24 +22,6 @@
         <span class="help mb-0" style="margin-left:auto">Fills the form — then hit Compute score</span>
     </div>
 
-    <div class="card mb-3" style="border-left: 4px solid var(--brand); background: var(--bg-soft);">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-            <div>
-                <h3 style="margin-top:0; margin-bottom:4px;"><i class="fas fa-link" style="color:var(--brand)"></i> Connect via Account Aggregator</h3>
-                <p class="muted mb-0" style="font-size:0.9rem">Instantly fetch alternative data signals from banks, GST networks, and utilities to pre-fill the application securely.</p>
-            </div>
-            <button type="button" class="btn btn-primary" id="btnAAConnect" onclick="simulateAA()">
-                <i class="fas fa-bolt"></i> Connect & Fetch Data
-            </button>
-        </div>
-        <div id="aa-progress" style="display:none; margin-top: 15px;">
-            <p class="muted mb-1" id="aa-status" style="font-size:0.85rem">Contacting FIPs...</p>
-            <div style="width:100%; background:var(--border); height:6px; border-radius:3px; overflow:hidden;">
-                <div id="aa-bar" style="width:0%; background:var(--brand); height:100%; transition: width 0.3s;"></div>
-            </div>
-        </div>
-    </div>
-
     <div class="grid {{ 'grid-side' if result else '' }}">
 
         <!-- ---------------- FORM ---------------- -->
@@ -406,7 +388,7 @@
             </div>
 
             {% if result.improvement_path %}
-            <div class="card">
+            <div class="card mb-3">
                 <div class="card-head">
                     <div>
                         <p class="card-title mb-0"><i class="fas fa-arrow-trend-up" style="color:var(--good)"></i>
@@ -427,6 +409,98 @@
                 </div>
             </div>
             {% endif %}
+
+            <!-- ===== PRICING ===== -->
+            <div class="card mb-3">
+                <div class="card-head" style="margin-bottom:.5rem">
+                    <p class="card-title mb-0"><i class="fas fa-percent" style="color:var(--brand)"></i> Risk-based pricing</p>
+                    <span class="chip chip-info">Auto-computed</span>
+                </div>
+                <div class="datarow">
+                    <dt>Indicative rate</dt>
+                    <dd><strong style="color:var(--{{ result.tier_tone }})">{{ floor_rate }}% p.a.</strong></dd>
+                </div>
+                <div class="datarow">
+                    <dt>Indicative EMI</dt>
+                    <dd>₹{{ '{:,.0f}'.format(result.computed_proposed_emi) }}/mo</dd>
+                </div>
+                <div class="datarow" style="border-bottom:none">
+                    <dt>Net cash flow after EMI</dt>
+                    <dd>₹{{ '{:,.0f}'.format(result.computed_net_cashflow - result.computed_proposed_emi) }}/mo</dd>
+                </div>
+            </div>
+
+            <!-- ===== MARKETPLACE ACTION ===== -->
+            {% if is_listable %}
+            <div class="card" style="border:1.5px solid var(--good)">
+                <div class="card-head" style="margin-bottom:.75rem">
+                    <i class="fas fa-store" style="color:var(--good);font-size:1.1rem;margin-top:2px"></i>
+                    <div>
+                        <p class="card-title mb-0" style="color:var(--good)">Eligible for co-funding marketplace</p>
+                        <p class="card-sub">Score {{ result.credit_score }} clears the {{ marketplace_min_score }} minimum — floor rate auto-set to <strong>{{ floor_rate }}%</strong></p>
+                    </div>
+                </div>
+                <form method="post" action="{{ url_for('save_and_list') }}">
+                    {% for k, v in form_values.items() %}
+                    <input type="hidden" name="{{ k }}" value="{{ v }}">
+                    {% endfor %}
+                    <div class="grid grid-2" style="gap:0 16px">
+                        <div class="field">
+                            <label class="label">Interest rate</label>
+                            <div class="input-group">
+                                <input type="number" name="interest_rate" class="input" step="0.1" min="8.5" max="28" value="{{ floor_rate }}">
+                                <span class="input-suffix">%</span>
+                            </div>
+                            <p class="help">Floor {{ floor_rate }}% · cap 28%</p>
+                        </div>
+                        <div class="field">
+                            <label class="label">Purpose</label>
+                            <select name="purpose" class="select">
+                                <option>Working capital</option>
+                                <option>Equipment / machinery</option>
+                                <option>Trade finance</option>
+                                <option>Shop expansion</option>
+                                <option>Personal — education</option>
+                                <option>Personal — medical</option>
+                                <option>Personal — housing</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="label">Borrower email <span class="hint">optional</span></label>
+                            <input type="email" name="borrower_email" class="input" placeholder="for lenders to reach them">
+                        </div>
+                        <div class="field">
+                            <label class="label">Borrower phone <span class="hint">optional</span></label>
+                            <input type="text" name="borrower_phone" class="input" placeholder="10-digit mobile">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block mt-2">
+                        <i class="fas fa-store"></i> Save &amp; list on marketplace
+                    </button>
+                </form>
+            </div>
+            {% elif critical %}
+            <div class="card" style="border:1.5px solid var(--bad)">
+                <div class="alert alert-critical" style="margin:0">
+                    <span class="alert-icon"><i class="fas fa-ban"></i></span>
+                    <div class="alert-body">
+                        <p class="alert-title">Marketplace listing not available</p>
+                        <p class="alert-text">Affordability guardrail triggered — listing for co-funding is blocked until repayment burden drops below 65% of net income.</p>
+                    </div>
+                </div>
+            </div>
+            {% elif score_gap > 0 %}
+            <div class="card" style="border:1.5px solid var(--warn)">
+                <div class="alert alert-warn" style="margin:0">
+                    <span class="alert-icon"><i class="fas fa-lock"></i></span>
+                    <div class="alert-body">
+                        <p class="alert-title">{{ score_gap }} points away from co-funding</p>
+                        <p class="alert-text">Marketplace requires {{ marketplace_min_score }}+ score. Current: {{ result.credit_score }}. Follow the improvement path to close the gap.</p>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
         </div>
         {% endif %}
     </div>
@@ -513,42 +587,6 @@
         onEntityTypeChange(p.business_type);
         toggleGst(); toggleBureau();
         document.getElementById('assessForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    function simulateAA() {
-        const btn = document.getElementById('btnAAConnect');
-        const progress = document.getElementById('aa-progress');
-        const bar = document.getElementById('aa-bar');
-        const status = document.getElementById('aa-status');
-        
-        btn.disabled = true;
-        progress.style.display = 'block';
-        
-        let step = 0;
-        const steps = [
-            { msg: "Connecting to Sahamati AA...", width: 10 },
-            { msg: "Authenticating with HDFC Bank (FIP)...", width: 30 },
-            { msg: "Extracting GST invoices from GSTN...", width: 60 },
-            { msg: "Verifying Utility Bill payments...", width: 85 },
-            { msg: "Data fetched successfully!", width: 100 }
-        ];
-
-        const interval = setInterval(() => {
-            if (step >= steps.length) {
-                clearInterval(interval);
-                setTimeout(() => {
-                    progress.style.display = 'none';
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-check"></i> Data Fetched';
-                    btn.style.background = 'var(--good)';
-                    loadPreset('strong');
-                }, 1000);
-                return;
-            }
-            status.textContent = steps[step].msg;
-            bar.style.width = steps[step].width + '%';
-            step++;
-        }, 800);
     }
 
     document.addEventListener('DOMContentLoaded', () => {

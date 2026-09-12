@@ -1,0 +1,449 @@
+{% extends "base.html" %}
+{% block title %}Bank Statement Parser — CredVeda{% endblock %}
+{% block head_extra %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<style>
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: 12px;
+  padding: 3rem 2rem; text-align: center; cursor: pointer;
+  transition: border-color .2s, background .2s;
+  background: var(--bg-soft);
+}
+.drop-zone.drag-over {
+  border-color: var(--accent); background: rgba(79,140,255,.06);
+}
+.drop-zone:hover { border-color: var(--accent); }
+.drop-zone i { font-size: 2.4rem; color: var(--muted); margin-bottom: .75rem; }
+
+.step-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+  color: #fff; font-weight: 700; font-size: .82rem; flex-shrink: 0;
+}
+.extract-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: .75rem;
+}
+.form-label { font-size: .78rem; color: var(--muted); display: block; margin-bottom: .25rem; }
+.result-badge {
+  display: inline-flex; align-items: center; gap: .4rem; padding: .35rem .85rem;
+  border-radius: 20px; font-size: .82rem; font-weight: 700; border: 1.5px solid;
+}
+.verdict-ok  { color: #22c55e; border-color: #22c55e; background: rgba(34,197,94,.08); }
+.verdict-bad { color: #ef4444; border-color: #ef4444; background: rgba(239,68,68,.08); }
+
+.keyword-chip {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: .72rem;
+  margin: 2px; font-weight: 600;
+}
+.found     { background: rgba(34,197,94,.15); color: #22c55e; }
+.not-found { background: var(--bg-soft); color: var(--muted); border: 1px solid var(--border); }
+
+.progress-ring { display: none; }
+.progress-ring.visible { display: flex; align-items: center; gap: .65rem; font-size: .85rem; color: var(--muted); margin-top: .75rem; }
+
+#extracted-section { display: none; }
+#error-section     { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:900px; padding-top:2rem; padding-bottom:3rem;">
+
+  <div class="mb-2">
+    <h1 class="mb-1">Bank statement parser</h1>
+    <p class="muted" style="max-width:68ch;">
+      Upload a PDF bank statement — we detect whether it's genuinely an Indian bank statement,
+      extract key financial signals, and pre-fill the assessment form. No data is sent to any server —
+      all processing happens in your browser.
+    </p>
+  </div>
+
+  <!-- How it works -->
+  <div class="card mb-3" style="padding:1rem 1.25rem;">
+    <div style="display:flex; gap:1.5rem; flex-wrap:wrap;">
+      {% for step, desc in [
+        ('Upload PDF', 'Select or drag-drop your bank statement PDF'),
+        ('Auto-detect', 'We scan for bank keywords and account identifiers'),
+        ('Extract values', 'Key metrics are pulled from the text'),
+        ('Pre-fill form', 'Assessment form is filled — you confirm before scoring')
+      ] %}
+      <div style="display:flex; align-items:flex-start; gap:.6rem; flex:1; min-width:160px;">
+        <div class="step-badge">{{ loop.index }}</div>
+        <div>
+          <div style="font-weight:700; font-size:.87rem;">{{ step }}</div>
+          <div style="font-size:.76rem; color:var(--muted);">{{ desc }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Upload zone -->
+  <div class="card mb-3" style="padding:1.5rem;">
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('pdfInput').click()">
+      <i class="fas fa-file-invoice-dollar"></i>
+      <div style="font-size:1.05rem; font-weight:700; margin-bottom:.3rem;">Drop bank statement PDF here</div>
+      <div style="font-size:.82rem; color:var(--muted);">or click to select · PDF files only · processed locally</div>
+    </div>
+    <input type="file" id="pdfInput" accept=".pdf" style="display:none;" onchange="handleFile(this.files[0])">
+
+    <div class="progress-ring" id="progressRing">
+      <i class="fas fa-circle-notch fa-spin" style="color:var(--accent);"></i>
+      <span id="progressMsg">Reading PDF…</span>
+    </div>
+  </div>
+
+  <!-- Error section -->
+  <div id="error-section">
+    <div class="card mb-3" style="border-left:3px solid #ef4444; padding:1.25rem;">
+      <div style="font-weight:700; color:#ef4444; margin-bottom:.5rem; font-size:.95rem;">
+        <i class="fas fa-circle-xmark"></i> Not a valid bank statement
+      </div>
+      <div id="errorMsg" style="font-size:.85rem; color:var(--muted); line-height:1.6;"></div>
+      <div style="margin-top:.85rem;">
+        <div style="font-size:.75rem; color:var(--muted); margin-bottom:.4rem;">Keywords detected:</div>
+        <div id="keywordResults"></div>
+      </div>
+      <button onclick="resetUpload()"
+              style="margin-top:1rem; padding:.4rem .85rem; background:none; border:1px solid var(--border);
+                     border-radius:6px; font-size:.78rem; cursor:pointer; color:var(--text);">
+        <i class="fas fa-upload"></i> Try another file
+      </button>
+    </div>
+  </div>
+
+  <!-- Extracted section -->
+  <div id="extracted-section">
+    <div class="card mb-3" style="padding:1.25rem;">
+      <!-- Detection verdict -->
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem; margin-bottom:1rem;">
+        <div>
+          <div style="font-weight:700; font-size:1rem; margin-bottom:.25rem;">Statement detected</div>
+          <div id="detectedBank" style="font-size:.82rem; color:var(--muted);"></div>
+        </div>
+        <span class="result-badge verdict-ok">
+          <i class="fas fa-check"></i> Bank statement confirmed
+        </span>
+      </div>
+
+      <div style="font-size:.73rem; color:var(--muted); margin-bottom:.4rem;">Keywords found in document:</div>
+      <div id="foundKeywords" style="margin-bottom:1rem;"></div>
+
+      <div style="background:rgba(79,140,255,.07); border:1px solid #4f8cff30; border-radius:8px;
+                  padding:.75rem 1rem; font-size:.8rem; color:var(--muted); margin-bottom:1.25rem;">
+        <i class="fas fa-circle-info" style="color:var(--accent);"></i>
+        Values below are extracted/estimated from the PDF text.
+        <strong style="color:var(--text);">Review and adjust before running the assessment.</strong>
+      </div>
+
+      <!-- Extracted values form -->
+      <form method="get" action="{{ url_for('apply_page') }}" id="extractedForm">
+        <div class="extract-row">
+          <div>
+            <label class="form-label" for="avg_monthly_inflow">Avg monthly inflow (₹) *</label>
+            <input type="number" id="avg_monthly_inflow" name="avg_monthly_inflow" class="form-control" step="100" required>
+          </div>
+          <div>
+            <label class="form-label" for="inflow_volatility_cv">Inflow volatility (CV)</label>
+            <input type="number" id="inflow_volatility_cv" name="inflow_volatility_cv" class="form-control" step="0.01" min="0" max="1" placeholder="0.00–1.00">
+          </div>
+        </div>
+        <div class="extract-row">
+          <div>
+            <label class="form-label" for="inflow_growth_rate_6m">6-month growth rate</label>
+            <input type="number" id="inflow_growth_rate_6m" name="inflow_growth_rate_6m" class="form-control" step="0.01" min="-1" max="5" placeholder="e.g. 0.12 = 12%">
+          </div>
+          <div>
+            <label class="form-label" for="monthly_txn_count">Monthly transaction count</label>
+            <input type="number" id="monthly_txn_count" name="monthly_txn_count" class="form-control" min="0" step="1">
+          </div>
+        </div>
+        <div class="extract-row">
+          <div>
+            <label class="form-label" for="txn_bounce_rate">Bounce / return rate</label>
+            <input type="number" id="txn_bounce_rate" name="txn_bounce_rate" class="form-control" step="0.01" min="0" max="1" placeholder="0.00–1.00">
+          </div>
+          <div>
+            <label class="form-label" for="digital_adoption_ratio">Digital adoption ratio</label>
+            <input type="number" id="digital_adoption_ratio" name="digital_adoption_ratio" class="form-control" step="0.01" min="0" max="1" placeholder="0.00–1.00">
+          </div>
+        </div>
+        <div class="extract-row">
+          <div>
+            <label class="form-label" for="utility_ontime_ratio">Utility / bill on-time ratio</label>
+            <input type="number" id="utility_ontime_ratio" name="utility_ontime_ratio" class="form-control" step="0.01" min="0" max="1" placeholder="0.00–1.00">
+          </div>
+          <div>
+            <label class="form-label" for="rent_ontime_ratio">Rent on-time ratio</label>
+            <input type="number" id="rent_ontime_ratio" name="rent_ontime_ratio" class="form-control" step="0.01" min="0" max="1" placeholder="0.00–1.00">
+          </div>
+        </div>
+        <div class="extract-row">
+          <div>
+            <label class="form-label" for="existing_monthly_emi">Existing monthly EMI (₹)</label>
+            <input type="number" id="existing_monthly_emi" name="existing_monthly_emi" class="form-control" step="100" min="0" placeholder="0 if none">
+          </div>
+          <div>
+            <label class="form-label" for="existing_loan_count">Existing active loans</label>
+            <input type="number" id="existing_loan_count" name="existing_loan_count" class="form-control" step="1" min="0" placeholder="0">
+          </div>
+        </div>
+
+        <div style="display:flex; gap:.75rem; margin-top:.85rem; flex-wrap:wrap;">
+          <button type="submit" class="btn">
+            <i class="fas fa-arrow-right"></i> Continue to assessment form
+          </button>
+          <button type="button" onclick="resetUpload()"
+                  style="padding:.5rem 1rem; background:none; border:1px solid var(--border);
+                         border-radius:8px; color:var(--text); cursor:pointer; font-size:.85rem;">
+            <i class="fas fa-upload"></i> Upload different file
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Raw text debug (collapsed) -->
+    <details style="margin-top:.5rem;">
+      <summary style="font-size:.78rem; color:var(--muted); cursor:pointer;">
+        <i class="fas fa-code"></i> Show extracted PDF text (debug)
+      </summary>
+      <div style="margin-top:.5rem; background:var(--bg-soft); border:1px solid var(--border);
+                  border-radius:8px; padding:.85rem; max-height:220px; overflow:auto;">
+        <pre id="rawTextBlock" style="font-size:.72rem; color:var(--muted); white-space:pre-wrap; margin:0;"></pre>
+      </div>
+    </details>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── Keyword sets ──────────────────────────────────────────────────────────────
+const BANK_NAMES = [
+  'SBI', 'State Bank', 'HDFC', 'ICICI', 'Axis Bank', 'Kotak', 'Punjab National',
+  'PNB', 'Bank of Baroda', 'BOB', 'Canara', 'Union Bank', 'IDFC', 'Yes Bank',
+  'IndusInd', 'Federal Bank', 'UCO Bank', 'Central Bank', 'Bank of India',
+  'Indian Bank', 'IDBI', 'RBL', 'Bandhan', 'Paytm Payments', 'Airtel Payments'
+];
+
+const STATEMENT_KEYWORDS = [
+  'Account Number', 'Account No', 'A/C No', 'IFSC', 'Branch Code',
+  'Opening Balance', 'Closing Balance', 'Statement of Account',
+  'Transaction Date', 'Value Date', 'Withdrawal', 'Deposit',
+  'Debit', 'Credit', 'Balance', 'Passbook', 'Statement Period'
+];
+
+// Minimum required: at least 1 bank name + 4 statement keywords
+const MIN_STATEMENT_KEYWORDS = 4;
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+async function handleFile(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
+    showError('Please upload a PDF file (.pdf).', [], []);
+    return;
+  }
+  showProgress('Reading PDF…');
+  try {
+    const ab = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+    let fullText = '';
+    const maxPages = Math.min(pdf.numPages, 6); // read first 6 pages
+    for (let i = 1; i <= maxPages; i++) {
+      showProgress(`Scanning page ${i} of ${maxPages}…`);
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      fullText += content.items.map(s => s.str).join(' ') + '\n';
+    }
+    document.getElementById('rawTextBlock').textContent = fullText.slice(0, 5000);
+    analyseStatement(fullText, file.name);
+  } catch (err) {
+    showError('Could not read the PDF. It may be password-protected or corrupted.', [], []);
+    console.error(err);
+  }
+}
+
+function analyseStatement(text, filename) {
+  const upper = text.toUpperCase();
+
+  // Check bank names
+  const foundBanks = BANK_NAMES.filter(b => upper.includes(b.toUpperCase()));
+
+  // Check statement keywords (case-insensitive)
+  const foundKwds = STATEMENT_KEYWORDS.filter(k => upper.includes(k.toUpperCase()));
+  const missedKwds = STATEMENT_KEYWORDS.filter(k => !upper.includes(k.toUpperCase()));
+
+  const isBank = foundBanks.length > 0;
+  const hasEnoughKwds = foundKwds.length >= MIN_STATEMENT_KEYWORDS;
+
+  if (!isBank || !hasEnoughKwds) {
+    let msg = '';
+    if (!isBank)        msg += 'No recognised Indian bank name found in the document. ';
+    if (!hasEnoughKwds) msg += `Only ${foundKwds.length} of ${MIN_STATEMENT_KEYWORDS} required statement keywords detected. `;
+    msg += 'This does not appear to be an Indian bank account statement. Please upload a genuine bank statement PDF.';
+    showError(msg, foundKwds, missedKwds);
+    return;
+  }
+
+  hideProgress();
+  // Show detected bank
+  document.getElementById('detectedBank').textContent =
+    'Detected: ' + (foundBanks[0]) + (foundBanks.length > 1 ? ' and others' : '') +
+    ' · ' + foundKwds.length + ' statement signals confirmed';
+
+  // Render found keywords
+  document.getElementById('foundKeywords').innerHTML =
+    foundKwds.map(k => `<span class="keyword-chip found"><i class="fas fa-check" style="font-size:.6rem;"></i> ${k}</span>`).join('') +
+    missedKwds.slice(0,6).map(k => `<span class="keyword-chip not-found">${k}</span>`).join('');
+
+  // Extract values
+  extractAndFill(text);
+  document.getElementById('extracted-section').style.display = 'block';
+}
+
+// ── Value extraction helpers ──────────────────────────────────────────────────
+function findAmount(text, patterns) {
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) {
+      const val = parseFloat(m[1].replace(/,/g, ''));
+      if (!isNaN(val) && val > 0) return val;
+    }
+  }
+  return null;
+}
+
+function extractAndFill(text) {
+  // Extract numbers that appear after key labels
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Average inflow — look for "Total Credit" or sum credit column
+  const totalCredit = findAmount(text, [
+    /Total\s+Credit[^\d]*([\d,]+\.?\d*)/i,
+    /Credits?\s*:?\s*([\d,]+\.?\d*)/i,
+    /Total\s+Deposits?\s*:?\s*([\d,]+\.?\d*)/i,
+  ]);
+  const avgInflow = totalCredit ? Math.round(totalCredit / 6) : estimateInflow(text);
+  setVal('avg_monthly_inflow', avgInflow);
+
+  // Closing balance
+  const closingBal = findAmount(text, [
+    /Closing\s+Balance[^\d]*([\d,]+\.?\d*)/i,
+    /Closing\s+Bal[^\d]*([\d,]+\.?\d*)/i,
+  ]);
+
+  // Transaction count — count lines with date patterns
+  const txnDateCount = (text.match(/\d{2}[\/\-]\d{2}[\/\-]\d{4}/g) || []).length;
+  const monthlyTxn = txnDateCount > 0 ? Math.round(txnDateCount / 6) : 18;
+  setVal('monthly_txn_count', Math.max(5, monthlyTxn));
+
+  // Bounce rate — look for "ECS Return", "Cheque Bounce", "Dishonour"
+  const bounceCount = (text.match(/ECS\s+Return|Cheque\s+Return|Bounced|Dishonour|Inward\s+Return/gi) || []).length;
+  const bounceRate = Math.min(0.3, bounceCount > 0 ? Math.round(bounceCount / monthlyTxn * 100) / 100 : 0.02);
+  setVal('txn_bounce_rate', bounceRate);
+
+  // Digital adoption — look for UPI/NEFT/IMPS/RTGS keywords
+  const digitalTxns = (text.match(/UPI|NEFT|IMPS|RTGS|PhonePe|GPay|Paytm|BharatPe/gi) || []).length;
+  const digitalRatio = Math.min(0.95, txnDateCount > 0 ? Math.round(digitalTxns / txnDateCount * 100) / 100 : 0.6);
+  setVal('digital_adoption_ratio', digitalRatio);
+
+  // Utility payments — look for utility-style entries
+  const utilityPay = (text.match(/BESCOM|MSEB|BSES|ELECTRICITY|WATER\s+BILL|TELECOM|AIRTEL|JIO\s+PAYMENT|INSURANCE/gi) || []).length;
+  const utilityRatio = utilityPay > 0 ? 0.85 : 0.70;
+  setVal('utility_ontime_ratio', utilityRatio);
+
+  // Rent
+  const rentPay = (text.match(/RENT|LANDLORD|HOUSE\s+RENT|RENTAL/gi) || []).length;
+  setVal('rent_ontime_ratio', rentPay > 0 ? 0.9 : 0.75);
+
+  // Growth — heuristic from first vs last month credits
+  setVal('inflow_growth_rate_6m', estimateGrowth(text));
+
+  // Volatility — heuristic
+  setVal('inflow_volatility_cv', 0.18);
+
+  // EMI — look for "EMI" or "Loan" in debits
+  const emiMatch = findAmount(text, [
+    /EMI[^\d]*([\d,]+\.?\d*)/i,
+    /Loan\s+EMI[^\d]*([\d,]+\.?\d*)/i,
+  ]);
+  if (emiMatch) setVal('existing_monthly_emi', Math.round(emiMatch));
+  setVal('existing_loan_count', emiMatch ? 1 : 0);
+}
+
+function estimateInflow(text) {
+  // Fallback: look for any large Credit amounts
+  const credits = [...text.matchAll(/([\d,]{5,})\.?\d*\s*(Cr|CR|C\b)/g)]
+    .map(m => parseFloat(m[1].replace(/,/g,''))).filter(v => v > 100 && v < 10000000);
+  if (credits.length > 0) {
+    const avg = credits.reduce((a,b) => a+b, 0) / credits.length;
+    return Math.round(avg);
+  }
+  return 50000; // fallback default
+}
+
+function estimateGrowth(text) {
+  // Look for month-wise totals — very heuristic
+  const amounts = [...text.matchAll(/([\d,]+\.\d{2})/g)]
+    .map(m => parseFloat(m[1].replace(/,/g,'')))
+    .filter(v => v > 5000 && v < 1000000);
+  if (amounts.length >= 6) {
+    const first = amounts.slice(0, 3).reduce((a,b)=>a+b,0) / 3;
+    const last  = amounts.slice(-3).reduce((a,b)=>a+b,0) / 3;
+    if (first > 0) return Math.min(0.5, Math.max(-0.3, Math.round((last/first - 1) * 100) / 100));
+  }
+  return 0.08; // default moderate growth
+}
+
+function setVal(id, val) {
+  const el = document.getElementById(id);
+  if (el && val !== null && val !== undefined) el.value = val;
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function showProgress(msg) {
+  document.getElementById('progressMsg').textContent = msg;
+  document.getElementById('progressRing').classList.add('visible');
+  document.getElementById('extracted-section').style.display = 'none';
+  document.getElementById('error-section').style.display = 'none';
+}
+
+function hideProgress() {
+  document.getElementById('progressRing').classList.remove('visible');
+}
+
+function showError(msg, found, missed) {
+  hideProgress();
+  document.getElementById('extracted-section').style.display = 'none';
+  document.getElementById('errorMsg').textContent = msg;
+  const kDiv = document.getElementById('keywordResults');
+  kDiv.innerHTML =
+    found.map(k => `<span class="keyword-chip found">${k}</span>`).join('') +
+    missed.slice(0, 8).map(k => `<span class="keyword-chip not-found">${k}</span>`).join('');
+  document.getElementById('error-section').style.display = 'block';
+}
+
+function resetUpload() {
+  document.getElementById('pdfInput').value = '';
+  document.getElementById('extracted-section').style.display = 'none';
+  document.getElementById('error-section').style.display = 'none';
+  hideProgress();
+  document.getElementById('rawTextBlock').textContent = '';
+}
+</script>
+{% endblock %}

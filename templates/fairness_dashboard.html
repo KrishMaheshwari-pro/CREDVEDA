@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Fairness Audit — CredVeda{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+.metric-card { background: #1a1f26; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+.pass-badge { background: #28a74520; color: #28a745; border: 1px solid #28a745; }
+.warn-badge { background: #ffc10720; color: #ffc107; border: 1px solid #ffc107; }
+.fail-badge { background: #dc354520; color: #dc3545; border: 1px solid #dc3545; }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; }
+.group-row { border-bottom: 1px solid #30363d; padding: 10px 0; }
+.group-row:last-child { border-bottom: none; }
+.air-bar-wrap { height: 8px; background: #30363d; border-radius: 4px; flex: 1; margin: 0 10px; }
+.air-bar { height: 8px; border-radius: 4px; transition: width 0.5s ease; }
+.fairness-explanation { background: #161b22; border-left: 4px solid #2563eb; padding: 12px; border-radius: 4px; font-size: 0.85rem; color: #8b949e; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container mx-auto py-8" style="max-width:1000px;">
+  <h1 class="text-3xl font-bold mb-2 text-center">Fairness & Bias Audit</h1>
+  <p class="text-gray-400 text-center mb-2">Responsible lending requires scoring systems to be fair across demographic groups.</p>
+  <p class="text-center mb-8">
+    <span class="text-xs text-gray-500">Last audit: </span><span class="text-xs text-white" id="audit-time">Loading...</span>
+    <button onclick="runAudit()" class="ml-4 px-3 py-1 border border-gray-600 rounded text-xs text-blue-accent hover:text-white">↺ Refresh Audit</button>
+  </p>
+
+  <div class="fairness-explanation mb-6">
+    <b class="text-white">4/5ths Rule (80% Rule):</b> A group is considered to face disparate impact if its approval rate is less than 80% of the highest group's approval rate. An Adverse Impact Ratio (AIR) below 0.80 is flagged. Score threshold used: 55+ = creditworthy.
+  </div>
+
+  <!-- Summary Metrics -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="summary-metrics">
+    <div class="metric-card text-center">
+      <p class="text-gray-400 text-xs mb-1">Overall Approval Rate</p>
+      <p class="text-2xl font-bold text-white" id="overall-rate">—</p>
+    </div>
+    <div class="metric-card text-center">
+      <p class="text-gray-400 text-xs mb-1">Gini Coefficient</p>
+      <p class="text-2xl font-bold text-white" id="gini-val">—</p>
+      <p class="text-xs text-gray-500" id="gini-note">—</p>
+    </div>
+    <div class="metric-card text-center">
+      <p class="text-gray-400 text-xs mb-1">Groups Audited</p>
+      <p class="text-2xl font-bold text-white" id="groups-audited">—</p>
+    </div>
+    <div class="metric-card text-center">
+      <p class="text-gray-400 text-xs mb-1">Disparate Impact Flags</p>
+      <p class="text-2xl font-bold text-red-400" id="di-flags">—</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <!-- Score Distribution by Gender -->
+    <div class="bg-dark-card p-6">
+      <h2 class="text-xl font-bold mb-4">Score Distribution by Gender</h2>
+      <canvas id="genderChart" height="200"></canvas>
+    </div>
+    <!-- Score Distribution by Business Type -->
+    <div class="bg-dark-card p-6">
+      <h2 class="text-xl font-bold mb-4">Score Distribution by Business Type</h2>
+      <canvas id="bizChart" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- Gender Fairness -->
+  <div class="bg-dark-card p-6 mb-6" id="gender-section">
+    <h2 class="text-xl font-bold mb-2">Gender Fairness <span class="badge" id="gender-status">—</span></h2>
+    <p class="text-gray-400 text-xs mb-4">Higher AIR = more equitable. ≥0.80 passes the 4/5ths rule.</p>
+    <div id="gender-rows">
+      <div class="text-gray-400 text-sm">Loading...</div>
+    </div>
+  </div>
+
+  <!-- State Fairness (top 10 by gap) -->
+  <div class="bg-dark-card p-6 mb-6" id="state-section">
+    <h2 class="text-xl font-bold mb-2">Geographic Fairness <span class="text-sm text-gray-400">(Top States by Approval Gap)</span></h2>
+    <canvas id="stateChart" height="250"></canvas>
+  </div>
+
+  <!-- Business Type Fairness -->
+  <div class="bg-dark-card p-6 mb-6" id="biz-section">
+    <h2 class="text-xl font-bold mb-2">Business Type Fairness <span class="badge" id="biz-status">—</span></h2>
+    <div id="biz-rows">
+      <div class="text-gray-400 text-sm">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Responsible Lending Statement -->
+  <div class="bg-dark-card p-6">
+    <h2 class="text-xl font-bold mb-3">Responsible Lending Statement</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+      <div class="metric-card">
+        <p class="text-blue-accent font-bold mb-1">✅ Alternative Data</p>
+        <p class="text-gray-400">We score based on financial behaviour (UPI, GST, utility payments) — not demographic proxies.</p>
+      </div>
+      <div class="metric-card">
+        <p class="text-blue-accent font-bold mb-1">✅ SHAP Explainability</p>
+        <p class="text-gray-400">Every score comes with feature-level explanations so applicants and lenders understand the decision.</p>
+      </div>
+      <div class="metric-card">
+        <p class="text-blue-accent font-bold mb-1">✅ Thin File Handling</p>
+        <p class="text-gray-400">Applicants with limited history receive wider confidence bands, not automatic rejection.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let genderChart, bizChart, stateChart;
+
+async function runAudit() {
+  document.getElementById('audit-time').textContent = 'Running...';
+  try {
+    const resp = await fetch('/api/fairness_data');
+    const data = await resp.json();
+    if (data.error) { alert(data.error); return; }
+    renderAudit(data);
+    document.getElementById('audit-time').textContent = new Date().toLocaleString('en-IN');
+  } catch(e) {
+    document.getElementById('audit-time').textContent = 'Error loading data';
+  }
+}
+
+function renderAudit(data) {
+  // Summary
+  document.getElementById('overall-rate').textContent = (data.overall_approval_rate * 100).toFixed(1) + '%';
+  document.getElementById('gini-val').textContent = (data.gini || 0).toFixed(3);
+  document.getElementById('gini-note').textContent = data.gini < 0.3 ? 'Low inequality' : data.gini < 0.5 ? 'Moderate' : 'High inequality';
+  document.getElementById('groups-audited').textContent = data.groups_audited || '—';
+  document.getElementById('di-flags').textContent = data.disparate_impact_flags || 0;
+
+  // Gender rows
+  if (data.gender) renderGroupRows('gender-rows', 'gender-status', data.gender);
+  // Business rows
+  if (data.business_type) renderGroupRows('biz-rows', 'biz-status', data.business_type);
+
+  // Gender chart
+  if (data.gender_score_distribution) {
+    const ctx = document.getElementById('genderChart');
+    if (genderChart) genderChart.destroy();
+    const labels = Object.keys(data.gender_score_distribution);
+    const datasets = ['0-34','35-54','55-74','75-100'].map((band, i) => ({
+      label: band,
+      data: labels.map(g => data.gender_score_distribution[g][band] || 0),
+      backgroundColor: ['rgba(220,53,69,0.7)','rgba(255,193,7,0.7)','rgba(23,162,184,0.7)','rgba(40,167,69,0.7)'][i]
+    }));
+    genderChart = new Chart(ctx, { type:'bar', data:{labels,datasets}, options:{responsive:true, scales:{x:{stacked:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},y:{stacked:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}}}, plugins:{legend:{labels:{color:'#8b949e'}}}} });
+  }
+
+  // State chart
+  if (data.state_approval_rates) {
+    const sorted = Object.entries(data.state_approval_rates).sort((a,b)=>a[1]-b[1]).slice(0,10);
+    const ctx = document.getElementById('stateChart');
+    if (stateChart) stateChart.destroy();
+    stateChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: sorted.map(s=>s[0]),
+        datasets:[{ label:'Approval Rate', data: sorted.map(s=>+(s[1]*100).toFixed(1)),
+          backgroundColor: sorted.map(s => s[1] < 0.4 ? 'rgba(220,53,69,0.7)' : s[1] < 0.6 ? 'rgba(255,193,7,0.7)' : 'rgba(40,167,69,0.7)') }]
+      },
+      options:{ indexAxis:'y', responsive:true, scales:{ x:{title:{display:true,text:'Approval Rate %',color:'#8b949e'},ticks:{color:'#8b949e'},grid:{color:'#30363d'}}, y:{ticks:{color:'#e6edf3'},grid:{color:'#30363d'}} }, plugins:{legend:{display:false}} }
+    });
+  }
+
+  // Biz chart
+  if (data.biz_score_distribution) {
+    const ctx = document.getElementById('bizChart');
+    if (bizChart) bizChart.destroy();
+    const labels = Object.keys(data.biz_score_distribution);
+    const datasets = ['0-34','35-54','55-74','75-100'].map((band, i) => ({
+      label: band,
+      data: labels.map(g => data.biz_score_distribution[g][band] || 0),
+      backgroundColor: ['rgba(220,53,69,0.7)','rgba(255,193,7,0.7)','rgba(23,162,184,0.7)','rgba(40,167,69,0.7)'][i]
+    }));
+    bizChart = new Chart(ctx, { type:'bar', data:{labels,datasets}, options:{responsive:true, scales:{x:{stacked:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},y:{stacked:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}}}, plugins:{legend:{labels:{color:'#8b949e'}}}} });
+  }
+}
+
+function renderGroupRows(containerId, statusId, groups) {
+  let flags = 0;
+  const maxRate = Math.max(...Object.values(groups).map(g => g.approval_rate));
+  const html = Object.entries(groups).map(([name, g]) => {
+    const air = maxRate > 0 ? g.approval_rate / maxRate : 1;
+    const pass = air >= 0.80;
+    if (!pass) flags++;
+    const barWidth = Math.min(100, air * 100);
+    const barColor = pass ? '#28a745' : (air >= 0.70 ? '#ffc107' : '#dc3545');
+    return `<div class="group-row flex items-center gap-3">
+      <span class="text-white text-sm w-36 flex-shrink-0">${name}</span>
+      <div class="air-bar-wrap"><div class="air-bar" style="width:${barWidth}%;background:${barColor};"></div></div>
+      <span class="text-sm font-bold" style="color:${barColor};width:38px;text-align:right;">${(air).toFixed(2)}</span>
+      <span class="badge ${pass?'pass-badge':'fail-badge'} ml-2">${pass?'PASS':'FAIL'}</span>
+      <span class="text-xs text-gray-500 ml-2">${(g.approval_rate*100).toFixed(1)}% (n=${g.count})</span>
+    </div>`;
+  }).join('');
+  document.getElementById(containerId).innerHTML = html;
+  const statusEl = document.getElementById(statusId);
+  if (statusEl) {
+    statusEl.textContent = flags === 0 ? 'ALL PASS' : flags + ' FLAG' + (flags>1?'S':'');
+    statusEl.className = 'badge ml-2 ' + (flags===0 ? 'pass-badge' : 'fail-badge');
+  }
+}
+
+// Auto-load on page open
+runAudit();
+</script>
+{% endblock %}

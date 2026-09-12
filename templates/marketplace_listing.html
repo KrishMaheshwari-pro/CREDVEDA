@@ -1,0 +1,509 @@
+{% extends "base.html" %}
+{% block title %}{{ listing.listing_id }} — Marketplace — CredVeda{% endblock %}
+{% block head_extra %}
+<style>
+.fund-bar-wrap { height: 10px; background: var(--border); border-radius: 6px; overflow: hidden; margin: .35rem 0; }
+.fund-bar      { height: 100%; border-radius: 6px; transition: width .6s; }
+.meta-row      { display: flex; justify-content: space-between; align-items: center;
+                 padding: .5rem 0; border-bottom: 1px solid var(--border); font-size: .85rem; }
+.meta-row:last-child { border-bottom: none; }
+.meta-key      { color: var(--muted); }
+.lender-avatar {
+  width: 34px; height: 34px; border-radius: 50%; background: var(--card);
+  border: 2px solid var(--border); display: flex; align-items: center;
+  justify-content: center; font-weight: 700; font-size: .85rem; color: var(--accent); flex-shrink: 0;
+}
+.commit-row  { display: flex; align-items: center; gap: .75rem; padding: .55rem 0;
+               border-bottom: 1px solid var(--border); font-size: .85rem; }
+.commit-row:last-child { border-bottom: none; }
+.pending-row { display: flex; align-items: center; gap: .75rem; padding: .6rem 0;
+               border-bottom: 1px solid var(--border); font-size: .84rem; }
+.pending-row:last-child { border-bottom: none; }
+.rate-pill   { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: .72rem;
+               font-weight: 700; border: 1px solid; }
+.notif-block {
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: 8px; padding: 1rem 1.1rem; margin-top: .75rem;
+  font-size: .8rem; line-height: 1.7; color: var(--text);
+}
+.notif-block pre {
+  font-family: 'Inter', sans-serif; white-space: pre-wrap;
+  background: none; padding: 0; margin: 0; color: var(--text);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% set tier_color = '#22c55e' if listing.tier_tone == 'good' else ('#f59e0b' if listing.tier_tone == 'warn' else '#ef4444') %}
+{% set floor = floor_rate | default(12.0) %}
+<div class="container" style="max-width:1060px; padding-top:2rem; padding-bottom:3rem;">
+
+  <!-- Breadcrumb -->
+  <div style="font-size:.8rem; color:var(--muted); margin-bottom:1.25rem;">
+    <a href="{{ url_for('marketplace') }}" style="color:var(--accent);">Marketplace</a>
+    <span style="margin:0 .4rem;">›</span> {{ listing.listing_id }}
+  </div>
+
+  <!-- Status banners -->
+  {% if listing.status == 'funded' %}
+  <div style="background:rgba(34,197,94,.1); border:1px solid #22c55e; border-radius:8px;
+              padding:.75rem 1rem; margin-bottom:1.25rem; color:#22c55e; font-weight:600; font-size:.88rem;">
+    <i class="fas fa-check-circle"></i> Fully funded
+    {% if listing.fully_funded_at %} · {{ listing.fully_funded_at[:10] }}{% endif %}.
+    Loan disbursed automatically.
+  </div>
+  {% elif listing.status == 'cancelled' %}
+  <div style="background:rgba(239,68,68,.1); border:1px solid #ef4444; border-radius:8px;
+              padding:.75rem 1rem; margin-bottom:1.25rem; color:#ef4444; font-weight:600; font-size:.88rem;">
+    <i class="fas fa-ban"></i> This listing has been cancelled.
+  </div>
+  {% endif %}
+
+  <!-- Pending proposals notice (visible to listing bank only) -->
+  {% if is_owner and pending_proposals %}
+  <div style="background:rgba(245,158,11,.08); border:1px solid #f59e0b; border-radius:8px;
+              padding:.75rem 1rem; margin-bottom:1.25rem; font-size:.85rem;">
+    <i class="fas fa-clock" style="color:#f59e0b;"></i>
+    <strong style="color:#f59e0b; margin-left:.3rem;">{{ pending_proposals|length }} proposal{{ 's' if pending_proposals|length != 1 }}</strong>
+    <span style="color:var(--muted); margin-left:.3rem;">above floor rate — awaiting your accept/reject decision.</span>
+  </div>
+  {% endif %}
+
+  <div style="display:grid; grid-template-columns:1fr 360px; gap:1.5rem; align-items:start;">
+    <!-- ── LEFT COLUMN ── -->
+    <div>
+
+      <!-- Title card -->
+      <div class="card" style="padding:1.4rem; margin-bottom:1.1rem;">
+        <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+          <div style="width:64px; height:64px; border-radius:50%; border:3px solid {{ tier_color }};
+                      display:flex; align-items:center; justify-content:center;
+                      font-weight:800; font-size:1.2rem; color:{{ tier_color }}; flex-shrink:0;">
+            {{ listing.credit_score }}
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:1.3rem; font-weight:800; margin-bottom:.15rem;">{{ listing.listing_id }}</div>
+            <div style="color:var(--muted); font-size:.83rem; margin-bottom:.25rem;">
+              {{ listing.entity_type or '—' }}
+              {% if listing.business_type %} · {{ listing.business_type }}{% endif %}
+              {% if listing.geography_tier %} · {{ listing.geography_tier }}{% endif %}
+            </div>
+            <span style="font-size:.75rem; font-weight:700; color:{{ tier_color }};">{{ listing.tier_label }}</span>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:1.7rem; font-weight:800;">₹{{ "{:,.0f}".format(listing.amount_requested) }}</div>
+            <div style="color:var(--muted); font-size:.8rem;">{{ listing.tenure_months }} month loan</div>
+            <div style="color:var(--muted); font-size:.75rem;">{{ listing.purpose or 'Working capital' }}</div>
+          </div>
+        </div>
+
+        <!-- Rate strip -->
+        <div style="display:flex; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
+          <div style="background:var(--bg-soft); border:1px solid var(--border); border-radius:8px;
+                      padding:.5rem .85rem; flex:1; min-width:120px;">
+            <div style="font-size:.68rem; color:var(--muted); margin-bottom:.1rem;">Floor rate (listing bank)</div>
+            <div style="font-size:1.15rem; font-weight:800; color:var(--accent);">{{ floor }}% <span style="font-size:.72rem; font-weight:400; color:var(--muted);">p.a.</span></div>
+          </div>
+          {% if blended_rate %}
+          <div style="background:rgba(34,197,94,.07); border:1px solid #22c55e40; border-radius:8px;
+                      padding:.5rem .85rem; flex:1; min-width:120px;">
+            <div style="font-size:.68rem; color:var(--muted); margin-bottom:.1rem;">Blended rate (weighted avg)</div>
+            <div style="font-size:1.15rem; font-weight:800; color:#22c55e;">{{ blended_rate }}% <span style="font-size:.72rem; font-weight:400; color:var(--muted);">p.a.</span></div>
+          </div>
+          {% endif %}
+          {% if emi_monthly %}
+          <div style="background:var(--bg-soft); border:1px solid var(--border); border-radius:8px;
+                      padding:.5rem .85rem; flex:1; min-width:120px;">
+            <div style="font-size:.68rem; color:var(--muted); margin-bottom:.1rem;">Indicative monthly EMI</div>
+            <div style="font-size:1.15rem; font-weight:800;">₹{{ "{:,.0f}".format(emi_monthly) }}</div>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Funding bar -->
+        <div style="margin-top:1rem;">
+          <div style="display:flex; justify-content:space-between; font-size:.78rem; color:var(--muted); margin-bottom:.3rem;">
+            <span>₹{{ "{:,.0f}".format(total_committed) }} of ₹{{ "{:,.0f}".format(listing.amount_requested) }} committed
+              by {{ commitments|length }} lender{{ 's' if commitments|length != 1 }}</span>
+            <span style="font-weight:700; color:{{ tier_color }};">{{ pct_funded }}%</span>
+          </div>
+          <div class="fund-bar-wrap">
+            <div class="fund-bar" style="width:{{ pct_funded }}%; background:{{ tier_color }};"></div>
+          </div>
+          <div style="font-size:.73rem; color:var(--muted); margin-top:.2rem;">
+            ₹{{ "{:,.0f}".format([listing.amount_requested - total_committed, 0] | max) }} remaining
+          </div>
+        </div>
+      </div>
+
+      <!-- Applicant metrics -->
+      {% if result %}
+      <div class="card" style="padding:1.2rem; margin-bottom:1.1rem;">
+        <div style="font-weight:700; font-size:.95rem; margin-bottom:.75rem;">
+          Applicant metrics <span style="font-weight:400; color:var(--muted); font-size:.78rem;">(anonymised)</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-key">Data completeness</span>
+          <span>{{ (result.data_completeness * 100)|int }}%
+            <span style="color:var(--muted); font-size:.76rem; margin-left:.25rem;">{{ result.confidence_label }}</span>
+          </span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-key">FOIR</span>
+          <span>{{ (result.foir.foir * 100)|int }}%
+            <span style="color:{{ '#22c55e' if result.foir.passes else '#ef4444' }}; font-size:.76rem; margin-left:.25rem;">
+              {{ 'PASS' if result.foir.passes else 'CAUTION' }}
+            </span>
+          </span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-key">Credit decision</span>
+          <span style="color:{{ '#22c55e' if result.approved else '#ef4444' }}; font-weight:700;">
+            {{ 'APPROVED' if result.approved else 'DECLINED' }}
+          </span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-key">Score confidence band</span>
+          <span>{{ result.band_low }}–{{ result.band_high }} / 900</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-key">Repayment probability</span>
+          <span>{{ (result.probability_good * 100)|int }}%</span>
+        </div>
+        {% if result.guardrail_flags %}
+        <div class="meta-row">
+          <span class="meta-key">Guardrail flags</span>
+          <span>
+            {% for gf in result.guardrail_flags %}
+            <span style="font-size:.7rem; padding:2px 8px; border-radius:10px; margin-right:3px;
+                         background:{{ '#ef444415' if gf.severity=='critical' else '#f59e0b15' }};
+                         color:{{ '#ef4444' if gf.severity=='critical' else '#f59e0b' }};
+                         border:1px solid {{ '#ef4444' if gf.severity=='critical' else '#f59e0b' }};">
+              {{ gf.rule_id }}
+            </span>
+            {% endfor %}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Active lender commitments -->
+      <div class="card" style="padding:1.2rem; margin-bottom:1.1rem;">
+        <div style="font-weight:700; font-size:.95rem; margin-bottom:.75rem;">
+          Active commitments ({{ commitments|length }})
+        </div>
+        {% if commitments %}
+        {% for c in commitments %}
+        <div class="commit-row">
+          <div class="lender-avatar">{{ c.lender_username[0]|upper }}</div>
+          <div style="flex:1;">
+            <div style="font-weight:600; font-size:.87rem;">{{ c.lender_username }}</div>
+            <div style="font-size:.72rem; color:var(--muted);">{{ c.created_at[:10] }}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:700; color:#22c55e; font-size:.9rem;">₹{{ "{:,.0f}".format(c.committed_amount) }}</div>
+            {% if c.proposed_rate %}
+            <span class="rate-pill" style="color:#4f8cff; border-color:#4f8cff;">@ {{ c.proposed_rate }}%</span>
+            {% else %}
+            <span class="rate-pill" style="color:var(--muted); border-color:var(--border);">@ {{ floor }}%</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p style="color:var(--muted); font-size:.85rem; margin:0;">No committed lenders yet.</p>
+        {% endif %}
+      </div>
+
+      <!-- Pending proposals (listing bank only) -->
+      {% if is_owner and pending_proposals %}
+      <div class="card" style="padding:1.2rem; margin-bottom:1.1rem; border-left:3px solid #f59e0b;">
+        <div style="font-weight:700; font-size:.95rem; margin-bottom:.75rem; color:#f59e0b;">
+          <i class="fas fa-clock"></i> Proposals above floor rate — your decision
+        </div>
+        {% for p in pending_proposals %}
+        <div class="pending-row">
+          <div class="lender-avatar" style="color:#f59e0b;">{{ p.lender_username[0]|upper }}</div>
+          <div style="flex:1;">
+            <div style="font-weight:600; font-size:.87rem;">{{ p.lender_username }}</div>
+            {% if p.message %}
+            <div style="font-size:.74rem; color:var(--muted); margin-top:.1rem; max-width:280px; word-wrap:break-word;">
+              "{{ p.message }}"
+            </div>
+            {% endif %}
+            <div style="font-size:.72rem; color:var(--muted); margin-top:.1rem;">{{ p.created_at[:10] }}</div>
+          </div>
+          <div style="text-align:right; margin-right:.75rem;">
+            <div style="font-weight:700; font-size:.9rem;">₹{{ "{:,.0f}".format(p.committed_amount) }}</div>
+            <span class="rate-pill" style="color:#f59e0b; border-color:#f59e0b;">@ {{ p.proposed_rate }}%</span>
+            <div style="font-size:.68rem; color:var(--muted); margin-top:.15rem;">
+              {{ p.proposed_rate - floor | round(2) }}% above floor
+            </div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:.35rem; flex-shrink:0;">
+            <form method="post" action="{{ url_for('marketplace_respond', listing_id=listing.listing_id, interest_id=p.interest_id) }}" style="margin:0;">
+              <input type="hidden" name="action" value="accept">
+              <button type="submit"
+                      style="padding:.3rem .7rem; background:#22c55e20; border:1px solid #22c55e;
+                             border-radius:6px; color:#22c55e; font-size:.75rem; cursor:pointer; white-space:nowrap;">
+                <i class="fas fa-check"></i> Accept
+              </button>
+            </form>
+            <form method="post" action="{{ url_for('marketplace_respond', listing_id=listing.listing_id, interest_id=p.interest_id) }}" style="margin:0;">
+              <input type="hidden" name="action" value="reject">
+              <button type="submit"
+                      style="padding:.3rem .7rem; background:#ef444415; border:1px solid #ef4444;
+                             border-radius:6px; color:#ef4444; font-size:.75rem; cursor:pointer; white-space:nowrap;">
+                <i class="fas fa-times"></i> Reject
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+        <div style="font-size:.74rem; color:var(--muted); margin-top:.65rem; padding-top:.5rem; border-top:1px solid var(--border);">
+          <i class="fas fa-circle-info"></i> Accepting a proposal above floor rate will increase the blended rate.
+          The borrower's EMI will be recalculated automatically.
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Eligible government schemes -->
+      {% if matched_products %}
+      <div class="card" style="padding:1.2rem;">
+        <div style="font-weight:700; font-size:.95rem; margin-bottom:.75rem;">Eligible government schemes</div>
+        {% for p in matched_products %}
+        <div style="padding:.55rem 0; border-bottom:1px solid var(--border);">
+          <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.2rem; flex-wrap:wrap;">
+            <span style="background:{{ p.tag_color or '#4f8cff' }}; color:#fff;
+                         padding:2px 8px; border-radius:4px; font-size:.7rem; font-weight:700;">
+              {{ p.tag or p.scheme_id }}
+            </span>
+            <span style="font-weight:600; font-size:.86rem;">{{ p.name }}</span>
+          </div>
+          <div style="font-size:.77rem; color:var(--muted);">
+            Up to ₹{{ "{:,.0f}".format(p.max_loan_inr) }} · {{ p.interest_rate }}% p.a. · {{ p.max_tenure_months }} months
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Notification preview (funded listings) -->
+      {% if listing.status == 'funded' %}
+      <div class="card" style="padding:1.2rem; margin-top:1.1rem; border-left:3px solid #22c55e;">
+        <div style="font-weight:700; font-size:.95rem; margin-bottom:.1rem;">
+          <i class="fas fa-envelope" style="color:#22c55e;"></i> Borrower notification template
+        </div>
+        <div style="font-size:.75rem; color:var(--muted); margin-bottom:.75rem;">
+          Copy this to forward to the borrower via email or SMS.
+        </div>
+        <div class="notif-block">
+          <pre>Subject: Your loan has been fully funded — CredVeda Marketplace
+
+Dear Applicant (Ref: {{ listing.listing_id }}),
+
+We are pleased to inform you that your loan request has been fully committed
+by our lending partners on the CredVeda Credit Marketplace.
+
+LOAN SUMMARY
+────────────────────────────────────
+Loan Amount    : ₹{{ "{:,.0f}".format(listing.amount_requested) }}
+Tenure         : {{ listing.tenure_months }} months
+Blended Rate   : {{ blended_rate or floor }}% per annum
+Monthly EMI    : ₹{{ "{:,.0f}".format(emi_monthly) if emi_monthly else "—" }}
+Purpose        : {{ listing.purpose or "Working capital" }}
+Funded On      : {{ listing.fully_funded_at[:10] if listing.fully_funded_at else "Today" }}
+
+LENDER BREAKDOWN
+────────────────────────────────────{% for c in commitments %}
+{{ "%-24s" | format(c.lender_username) }}₹{{ "{:,.0f}".format(c.committed_amount) }} @ {{ c.proposed_rate or blended_rate or floor }}%{% endfor %}
+
+────────────────────────────────────
+
+Your credit passport (show to any lender):
+{{ request.host_url }}passport/{{ listing.applicant_id }}
+
+Please contact your listing bank to finalise disbursement paperwork.
+
+This is an automated notification from CredVeda — a responsible AI
+credit intelligence platform for individuals and small businesses.
+</pre>
+        </div>
+        <button onclick="copyNotif()"
+                style="margin-top:.6rem; padding:.4rem .85rem; background:var(--bg-soft);
+                       border:1px solid var(--border); border-radius:6px; font-size:.77rem;
+                       color:var(--text); cursor:pointer;">
+          <i class="fas fa-copy"></i> Copy to clipboard
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ── RIGHT COLUMN: Commit panel ── -->
+    <div style="position:sticky; top:80px;">
+
+      <!-- Rate info box -->
+      <div style="background:rgba(79,140,255,.07); border:1px solid #4f8cff40;
+                  border-radius:8px; padding:.85rem 1rem; margin-bottom:.85rem; font-size:.82rem;">
+        <div style="font-weight:700; color:var(--accent); margin-bottom:.4rem;">
+          <i class="fas fa-percent"></i> Interest rate negotiation
+        </div>
+        <div style="color:var(--muted); line-height:1.6;">
+          Floor rate: <strong style="color:var(--text);">{{ floor }}%</strong> p.a.<br>
+          Propose ≤ floor → <span style="color:#22c55e;">auto-accepted</span>.<br>
+          Propose > floor → <span style="color:#f59e0b;">pending review</span> by listing bank.<br>
+          Leave blank to use the floor rate.
+        </div>
+      </div>
+
+      <div class="card" style="padding:1.25rem; margin-bottom:.85rem;">
+        <div style="font-weight:700; margin-bottom:1rem; font-size:.95rem;">
+          {% if listing.status == 'open' %}
+            {% if already_committed %}Your commitment{% elif has_pending %}Your proposal{% else %}Commit to fund{% endif %}
+          {% else %}Commitment panel{% endif %}
+        </div>
+
+        {% if listing.status == 'open' and not already_committed and not has_pending %}
+        <form method="post" action="{{ url_for('marketplace_commit', listing_id=listing.listing_id) }}" id="commitForm">
+          <!-- Amount slider -->
+          <label style="font-size:.78rem; color:var(--muted); display:block; margin-bottom:.3rem;">
+            Amount to contribute (₹) *
+          </label>
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem;">
+            <input type="range" id="amountSlider"
+                   min="1000" max="{{ listing.amount_requested }}" step="1000" value="10000"
+                   style="flex:1;accent-color:var(--accent);"
+                   oninput="document.getElementById('amountInput').value=this.value; document.getElementById('amountDisplay').textContent='₹'+Number(this.value).toLocaleString('en-IN')">
+            <span id="amountDisplay" style="font-weight:700;color:var(--accent);min-width:5rem;text-align:right;font-size:.88rem;">₹10,000</span>
+          </div>
+          <input type="number" name="amount" id="amountInput"
+                 min="1000" max="{{ listing.amount_requested }}" step="1000" value="10000"
+                 required style="margin-bottom:.75rem; font-size:.82rem;"
+                 class="form-control"
+                 oninput="document.getElementById('amountSlider').value=this.value; document.getElementById('amountDisplay').textContent='₹'+Number(this.value).toLocaleString('en-IN')">
+
+          <!-- Rate input with live status indicator -->
+          <label style="font-size:.78rem; color:var(--muted); display:block; margin-bottom:.25rem;">
+            Your interest rate (% p.a.)
+          </label>
+          <div style="display:flex; align-items:center; gap:.4rem; margin-bottom:.3rem;">
+            <input type="number" name="proposed_rate" id="rateInput" class="form-control"
+                   min="4" max="36" step="0.1" value="{{ floor }}" style="flex:1;"
+                   oninput="updateRateStatus(this.value)">
+            <span style="font-size:.8rem; color:var(--muted); white-space:nowrap;">% p.a.</span>
+          </div>
+          <div id="rateStatus" style="font-size:.75rem; margin-bottom:.75rem; padding:4px 8px; border-radius:6px; background:rgba(34,197,94,.1); color:#22c55e; border:1px solid rgba(34,197,94,.3);">
+            <i class="fas fa-check-circle"></i> Matches floor rate — <strong>instant acceptance</strong>
+          </div>
+
+          <label style="font-size:.78rem; color:var(--muted); display:block; margin-bottom:.25rem;">
+            Message to listing bank <span style="font-weight:400;">(optional)</span>
+          </label>
+          <textarea name="message" class="form-control" rows="2"
+                    placeholder="e.g. Happy to co-fund at 13% given sector exposure."
+                    maxlength="300" style="margin-bottom:.75rem; resize:vertical;"></textarea>
+
+          <p style="font-size:.73rem; color:var(--muted); margin-bottom:.85rem; line-height:1.5;">
+            {{ pct_funded }}% already funded · min ₹1,000 · auto-disbursed at 100%
+          </p>
+          <button type="submit" class="btn" style="width:100%;">
+            <i class="fas fa-handshake"></i> Submit commitment
+          </button>
+        </form>
+        <script>
+        function updateRateStatus(val) {
+          const floor = {{ floor }};
+          const r = document.getElementById('rateStatus');
+          if (!val || parseFloat(val) <= floor) {
+            r.style.background = 'rgba(34,197,94,.1)';
+            r.style.color = '#22c55e';
+            r.style.borderColor = 'rgba(34,197,94,.3)';
+            r.innerHTML = '<i class="fas fa-check-circle"></i> Matches floor rate — <strong>instant acceptance</strong>';
+          } else {
+            r.style.background = 'rgba(245,158,11,.1)';
+            r.style.color = '#f59e0b';
+            r.style.borderColor = 'rgba(245,158,11,.3)';
+            r.innerHTML = '<i class="fas fa-clock"></i> Above floor — sends a <strong>proposal for bank review</strong>';
+          }
+        }
+        </script>
+
+        {% elif already_committed %}
+        <div style="background:rgba(34,197,94,.1); border:1px solid #22c55e; border-radius:8px;
+                    padding:.85rem; text-align:center; color:#22c55e; font-weight:600; font-size:.85rem;">
+          <i class="fas fa-check-circle"></i> You have an active commitment.
+        </div>
+
+        {% elif has_pending %}
+        <div style="background:rgba(245,158,11,.1); border:1px solid #f59e0b; border-radius:8px;
+                    padding:.85rem; text-align:center; color:#f59e0b; font-weight:600; font-size:.84rem;">
+          <i class="fas fa-clock"></i> Your proposal is pending review by the listing bank.
+        </div>
+
+        {% elif listing.status == 'funded' %}
+        <div style="color:var(--muted); font-size:.85rem; text-align:center; padding:.75rem;">
+          <i class="fas fa-lock"></i> This loan is fully funded.
+        </div>
+
+        {% else %}
+        <div style="color:var(--muted); font-size:.85rem; text-align:center; padding:.75rem;">
+          Listing is not accepting commitments.
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Credit passport link -->
+      <div class="card" style="padding:.85rem 1rem; margin-bottom:.85rem; background:var(--bg-soft);">
+        <div style="font-size:.78rem; color:var(--muted); margin-bottom:.4rem;">
+          <i class="fas fa-id-card"></i> Borrower's credit passport
+        </div>
+        <a href="{{ url_for('credit_passport', applicant_id=listing.applicant_id) }}"
+           target="_blank"
+           style="font-size:.82rem; color:var(--accent); word-break:break-all;">
+          {{ request.host_url }}passport/{{ listing.applicant_id }}
+        </a>
+        <div style="font-size:.71rem; color:var(--muted); margin-top:.35rem;">
+          Public page — share with the borrower. Shows score, EMI, funded terms, and improvement steps.
+        </div>
+      </div>
+
+      <!-- Cancel listing (owner only) -->
+      {% if is_owner and listing.status == 'open' %}
+      <form method="post"
+            action="{{ url_for('marketplace_cancel', listing_id=listing.listing_id) }}"
+            onsubmit="return confirm('Cancel this listing? Committed amounts will be released.');"
+            style="margin-bottom:.85rem;">
+        <button type="submit"
+                style="width:100%; padding:.5rem; background:none; border:1px solid #ef4444;
+                       border-radius:8px; color:#ef4444; font-size:.8rem; cursor:pointer;">
+          <i class="fas fa-times-circle"></i> Cancel listing
+        </button>
+      </form>
+      {% endif %}
+
+      <a href="{{ url_for('marketplace') }}" class="btn-secondary"
+         style="display:block; text-align:center; font-size:.82rem; padding:.5rem;">
+        ← Back to Marketplace
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyNotif() {
+  const pre = document.querySelector('.notif-block pre');
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.innerText)
+    .then(() => { alert('Notification template copied to clipboard.'); })
+    .catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = pre.innerText; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      alert('Copied!');
+    });
+}
+</script>
+{% endblock %}

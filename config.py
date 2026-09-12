@@ -257,3 +257,30 @@ ACTIONABLE_FEATURES = {
 # but NEVER present in FEATURE_COLS).
 FAIRNESS_GROUPS = ["gender", "geography_tier", "business_type", "entity_type"]
 FAIRNESS_ADVERSE_IMPACT_THRESHOLD = 0.80  # four-fifths rule
+
+# --- GUARDRAIL / DTI (used by guardrails.py) --------------------------------
+DTI_WARNING_THRESHOLD = 0.45    # 45% total-obligation-to-income triggers WARNING
+DTI_CRITICAL_THRESHOLD = 0.65   # 65% triggers CRITICAL (same as FOIR_HARD_STOP)
+
+# --- THIN FILE (used by thin_file_handler.py) --------------------------------
+THIN_FILE_COMPLETENESS_THRESHOLD = 0.50  # below this = thin file
+
+# --- SCORE BANDS (for loan_product_matcher, lender_ops, score_report) -------
+# Normalised 0-100 bands used by the new-module layer; the live scoring
+# pipeline uses 300-900 (SCORE_MIN / SCORE_MAX).  Conversion: (x-300)/600*100
+SCORE_BANDS = [
+    {"min": 75, "max": 100, "label": "Excellent",         "color": "#22c55e"},
+    {"min": 55, "max": 74,  "label": "Good",              "color": "#4f8cff"},
+    {"min": 35, "max": 54,  "label": "Fair",              "color": "#f59e0b"},
+    {"min": 0,  "max": 34,  "label": "Poor",              "color": "#ef4444"},
+]
+
+# --- CREDIT MARKETPLACE ------------------------------------------------------
+# The marketplace lets lenders browse and co-fund vetted applicants, directly
+# addressing the PS #4 problem: "working capital stays out of reach of viable
+# businesses" because no single lender will take the first risk.
+MARKETPLACE_MIN_SCORE = 620      # minimum 300-900 score to be listable
+MARKETPLACE_MAX_LISTINGS = 200   # hard cap on open listings returned
+
+# --- AI UNDERWRITER CHATBOT --------------------------------------------------
+CHATBOT_MAX_TOKENS = 380         # Gemini response token budget per turn

@@ -1,0 +1,533 @@
+{% extends "base.html" %}
+
+{% block title %}Credit Score Report — {{ app_data.applicant_name }} — CredVeda{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+/* ---- Score circle ---- */
+.score-circle {
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    border: 8px solid {{ band.color | default('#58a6ff') }};
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #161b22;
+    box-shadow: 0 0 32px {{ band.color | default('#58a6ff') }}44;
+    flex-shrink: 0;
+}
+.score-number { font-size: 2.6rem; font-weight: 900; color: {{ band.color | default('#58a6ff') }}; line-height: 1; }
+.score-label { font-size: 0.72rem; color: #8b949e; margin-top: 4px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* ---- Band badge ---- */
+.band-badge {
+    display: inline-block;
+    padding: 3px 14px;
+    border-radius: 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    background: {{ band.color | default('#58a6ff') }}22;
+    color: {{ band.color | default('#58a6ff') }};
+    border: 1px solid {{ band.color | default('#58a6ff') }}55;
+}
+
+/* ---- Confidence badge ---- */
+.conf-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.conf-HIGH { background: #1a3d22; color: #28a745; }
+.conf-MEDIUM { background: #3d2e0a; color: #f59e0b; }
+.conf-LOW { background: #3d0a0a; color: #ef4444; }
+
+/* ---- Guardrail ---- */
+.guardrail-CLEAR { background: #0d2217; border-color: #28a745; }
+.guardrail-WARNING { background: #2a1e06; border-color: #f59e0b; }
+.guardrail-CRITICAL { background: #250808; border-color: #ef4444; }
+.guardrail-icon-CLEAR { color: #28a745; }
+.guardrail-icon-WARNING { color: #f59e0b; }
+.guardrail-icon-CRITICAL { color: #ef4444; }
+
+/* ---- Reason code pill ---- */
+.rc-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: #21262d;
+    color: #58a6ff;
+    margin-right: 6px;
+    font-family: monospace;
+}
+
+/* ---- Improvement step difficulty badge ---- */
+.diff-easy   { background:#0d2217; color:#28a745; }
+.diff-medium { background:#2a1e06; color:#f59e0b; }
+.diff-hard   { background:#250808; color:#ef4444; }
+.diff-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+/* ---- Loan product card ---- */
+.loan-card {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: border-color 0.2s;
+}
+.loan-card:hover { border-color: #2563eb; }
+
+/* ---- Chart containers ---- */
+.chart-box {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+/* ---- Section title ---- */
+.section-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #58a6ff;
+    margin-bottom: 1rem;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #30363d;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ---- Hindi toggle ---- */
+.lang-block { display: none; }
+.lang-block.visible { display: block; }
+.lang-toggle-btn {
+    background: transparent;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    border-radius: 8px;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+.lang-toggle-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+
+/* ---- Print button ---- */
+.print-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #e6edf3;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.print-btn:hover { background: #30363d; }
+
+@media print {
+    .fixed-header, .site-footer, .print-btn, .lang-toggle-btn,
+    #open-chatbot-btn, #chatbot-container { display: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    .bg-dark-card { background: #f9f9f9 !important; border: 1px solid #ccc !important; }
+}
+
+@media (max-width: 640px) {
+    .score-hero { flex-direction: column; align-items: flex-start; }
+    .loan-grid { grid-template-columns: 1fr !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% set score = score_data.score | default(0) %}
+{% set confidence = score_data.confidence | default('MEDIUM') %}
+{% set guardrail = score_data.guardrail_severity | default('CLEAR') %}
+
+<div style="max-width:860px; margin:0 auto; padding:24px 12px 60px;">
+
+    <!-- Header bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:12px;">
+        <div>
+            <h1 style="font-size:1.4rem; margin-bottom:2px;">Credit Score Report</h1>
+            <p style="font-size:0.8rem; color:#8b949e; margin:0;">
+                Application ID: <span style="font-family:monospace; color:#58a6ff;">{{ app_id }}</span>
+                &nbsp;&bull;&nbsp;
+                {{ app_data.applicant_name }} &bull; {{ app_data.business_type }} &bull; {{ app_data.state }}
+            </p>
+        </div>
+        <button class="print-btn" onclick="window.print()">
+            &#128438; Print / Save PDF
+        </button>
+    </div>
+
+    <!-- ===================== SCORE HERO ===================== -->
+    <div class="bg-dark-card score-hero" style="display:flex; align-items:center; gap:2rem; margin-bottom:1.5rem; flex-wrap:wrap;">
+
+        <div class="score-circle">
+            <div class="score-number">{{ score }}</div>
+            <div class="score-label">CredVeda Score</div>
+        </div>
+
+        <div style="flex:1; min-width:220px;">
+            <div style="margin-bottom:10px;">
+                <span class="band-badge">{{ band.label | default('—') }}</span>
+                &nbsp;
+                <span class="conf-badge conf-{{ confidence }}">{{ confidence }} CONFIDENCE</span>
+            </div>
+
+            <div style="font-size:0.82rem; color:#8b949e; margin-bottom:6px;">Score Range</div>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+                <!-- Score range bar -->
+                <span style="font-size:0.8rem; color:#8b949e;">300</span>
+                <div style="flex:1; background:#21262d; border-radius:4px; height:10px; position:relative;">
+                    <!-- Band fill -->
+                    <div style="
+                        position:absolute; top:0; bottom:0;
+                        left:{{ (((score_data.score_lower | default(score-30)) - 300) / 550 * 100) | round(1) }}%;
+                        width:{{ (((score_data.score_upper | default(score+30)) - (score_data.score_lower | default(score-30))) / 550 * 100) | round(1) }}%;
+                        background:{{ band.color | default('#58a6ff') }}55;
+                        border-radius:4px;
+                    "></div>
+                    <!-- Score pin -->
+                    <div style="
+                        position:absolute; top:-3px; bottom:-3px; width:4px;
+                        background:{{ band.color | default('#58a6ff') }};
+                        border-radius:2px;
+                        left:{{ (((score | int) - 300) / 550 * 100) | round(1) }}%;
+                        transform:translateX(-50%);
+                    "></div>
+                </div>
+                <span style="font-size:0.8rem; color:#8b949e;">850</span>
+            </div>
+
+            <div style="font-size:0.8rem; color:#8b949e;">
+                Band range: <strong style="color:#e6edf3;">{{ score_data.score_lower | default('—') }} – {{ score_data.score_upper | default('—') }}</strong>
+                &nbsp;&bull;&nbsp;
+                Peer percentile: <strong style="color:#e6edf3;">{{ score_data.peer_percentile | default('—') }}{{ 'th' if score_data.peer_percentile else '' }}</strong>
+            </div>
+
+            {% if band.description %}
+            <p style="font-size:0.82rem; color:#8b949e; margin-top:8px; margin-bottom:0;">{{ band.description }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not model_loaded %}
+    <div style="background:#2a1e06; border:1px solid #f59e0b; border-radius:8px; padding:10px 16px; margin-bottom:1rem; font-size:0.82rem; color:#f59e0b;">
+        <strong>Note:</strong> The ML model was not loaded. This score is based on heuristic rules and should be treated as indicative only.
+    </div>
+    {% endif %}
+
+    <!-- ===================== SUMMARY ===================== -->
+    <div class="bg-dark-card" style="margin-bottom:1.5rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
+            <div class="section-title" style="margin-bottom:0;">Plain-Language Summary</div>
+            <button class="lang-toggle-btn" onclick="toggleLang(this)">&#127470;&#127475; Hindi</button>
+        </div>
+        <div class="lang-block visible" id="summary-en">
+            <p style="font-size:0.9rem; color:#e6edf3; line-height:1.7; margin:0;">
+                {{ score_data.plain_language_summary | default('Your credit profile has been assessed based on alternative data signals.') }}
+            </p>
+        </div>
+        <div class="lang-block" id="summary-hi">
+            <p style="font-size:0.9rem; color:#e6edf3; line-height:1.7; margin:0; font-family:'Noto Sans Devanagari', sans-serif;">
+                {{ score_data.hindi_summary | default('आपकी क्रेडिट प्रोफ़ाइल का मूल्यांकन वैकल्पिक डेटा संकेतों के आधार पर किया गया है।') }}
+            </p>
+        </div>
+    </div>
+
+    <!-- ===================== GUARDRAIL ===================== -->
+    <div class="bg-dark-card guardrail-{{ guardrail }}" style="margin-bottom:1.5rem; border-width:1px; border-style:solid;">
+        <div style="display:flex; align-items:center; gap:12px;">
+            <div style="font-size:1.8rem;" class="guardrail-icon-{{ guardrail }}">
+                {% if guardrail == 'CLEAR' %}&#9989;
+                {% elif guardrail == 'WARNING' %}&#9888;
+                {% else %}&#128683;
+                {% endif %}
+            </div>
+            <div>
+                <div style="font-size:0.8rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em;" class="guardrail-icon-{{ guardrail }}">
+                    Responsible Lending Check — {{ guardrail }}
+                </div>
+                <div style="font-size:0.84rem; color:#c0c0c0; margin-top:2px;">
+                    {% if guardrail == 'CLEAR' %}
+                        This application passes all responsible lending guardrails. Proposed EMI is within acceptable debt-service limits.
+                    {% elif guardrail == 'WARNING' %}
+                        <strong>Warning:</strong> {{ score_data.guardrail_flag | default('Proposed EMI may strain cash flow. Total DTI exceeds 50%.') }}
+                    {% else %}
+                        <strong>Critical:</strong> {{ score_data.guardrail_flag | default('Proposed debt load is critically high. Total DTI exceeds 65%. Lending is not recommended at this amount.') }}
+                    {% endif %}
+                </div>
+                {% if score_data.proposed_emi or score_data.total_dti %}
+                <div style="font-size:0.8rem; color:#8b949e; margin-top:6px;">
+                    {% if score_data.proposed_emi %}Proposed EMI: <strong style="color:#e6edf3;">INR {{ '{:,.0f}'.format(score_data.proposed_emi) }}</strong>&nbsp;&nbsp;{% endif %}
+                    {% if score_data.total_dti %}Total DTI: <strong style="color:#e6edf3;">{{ score_data.total_dti | round(1) }}%</strong>{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== SHAP CHART ===================== -->
+    {% if score_data.reason_codes %}
+    <div class="bg-dark-card" style="margin-bottom:1.5rem;">
+        <div class="section-title">Score Factor Contributions (SHAP)</div>
+        <div class="chart-box">
+            <canvas id="shapChart" height="260"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ===================== REASON CODES ===================== -->
+    {% if score_data.reason_codes %}
+    <div class="bg-dark-card" style="margin-bottom:1.5rem;">
+        <div class="section-title">Key Score Drivers</div>
+        {% for rc in score_data.reason_codes %}
+        <div style="padding:12px 0; border-bottom:1px solid #30363d; {% if loop.last %}border-bottom:none;{% endif %}">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:180px;">
+                    <span class="rc-pill">{{ rc.code | default('RC-' ~ loop.index) }}</span>
+                    <strong style="font-size:0.88rem; color:#e6edf3;">{{ rc.short_text | default(rc.code) }}</strong>
+                    <div style="font-size:0.82rem; color:#8b949e; margin-top:4px;" id="rc-en-{{ loop.index }}">
+                        {{ rc.borrower_text | default('') }}
+                    </div>
+                    {% if rc.hindi_text %}
+                    <div style="font-size:0.82rem; color:#8b949e; margin-top:4px; display:none; font-family:'Noto Sans Devanagari',sans-serif;" id="rc-hi-{{ loop.index }}">
+                        {{ rc.hindi_text }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+                    {% if rc.impact is defined %}
+                    <span style="font-size:0.8rem; font-weight:700; color:{% if rc.impact > 0 %}#28a745{% else %}#ef4444{% endif %};">
+                        {% if rc.impact > 0 %}+{% endif %}{{ rc.impact | round(1) }} pts
+                    </span>
+                    {% endif %}
+                    {% if rc.hindi_text %}
+                    <button class="lang-toggle-btn" onclick="toggleRcLang({{ loop.index }}, this)" style="font-size:0.7rem;">&#127470;&#127475; Hindi</button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ===================== IMPROVEMENT TRAJECTORY ===================== -->
+    {% if score_data.improvement_steps %}
+    <div class="bg-dark-card" style="margin-bottom:1.5rem;">
+        <div class="section-title">6-Month Improvement Trajectory</div>
+        <div class="chart-box" style="margin-bottom:1.4rem;">
+            <canvas id="trajectoryChart" height="200"></canvas>
+        </div>
+
+        <!-- Top 3 improvement steps -->
+        {% if score_data.improvement_steps.steps %}
+        <div class="section-title" style="margin-top:0.5rem;">Top Improvement Actions</div>
+        {% for step in score_data.improvement_steps.steps[:3] %}
+        <div style="display:flex; gap:14px; align-items:flex-start; padding:10px 0; border-bottom:1px solid #30363d; {% if loop.last %}border-bottom:none;{% endif %}">
+            <div style="width:28px; height:28px; border-radius:50%; background:#2563eb; color:#fff; font-size:0.8rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">{{ loop.index }}</div>
+            <div style="flex:1;">
+                <div style="font-size:0.88rem; font-weight:600; color:#e6edf3; margin-bottom:3px;">
+                    {{ step.title | default(step.action | default('Improvement action')) }}
+                    {% set diff = step.difficulty | default('medium') | lower %}
+                    <span class="diff-badge diff-{{ diff }}" style="margin-left:8px;">{{ diff | capitalize }}</span>
+                </div>
+                <div style="font-size:0.8rem; color:#8b949e;">
+                    {{ step.description | default(step.detail | default('')) }}
+                    {% if step.score_gain %}
+                    &nbsp;<span style="color:#28a745; font-weight:700;">+{{ step.score_gain }} pts potential</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <div style="text-align:center; margin-top:1.2rem;">
+            <a href="{{ url_for('improvement_portal', app_id=app_id) }}" class="btn-primary" style="display:inline-block; text-decoration:none;">
+                View Full Improvement Portal &rarr;
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ===================== LOAN PRODUCTS ===================== -->
+    {% if score_data.loan_products %}
+    <div class="bg-dark-card" style="margin-bottom:1.5rem;">
+        <div class="section-title">Eligible Loan Products</div>
+        <div class="loan-grid" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
+            {% for product in score_data.loan_products %}
+            <div class="loan-card">
+                <div style="font-size:0.78rem; font-weight:700; color:#58a6ff; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">
+                    {{ product.name | default('Product') }}
+                </div>
+                {% if product.max_amount %}
+                <div style="font-size:1rem; font-weight:800; color:#e6edf3; margin-bottom:4px;">
+                    Up to INR {{ '{:,.0f}'.format(product.max_amount) }}
+                </div>
+                {% endif %}
+                {% if product.rate %}
+                <div style="font-size:0.78rem; color:#8b949e;">Rate: <strong style="color:#e6edf3;">{{ product.rate }}</strong></div>
+                {% endif %}
+                {% if product.tenure %}
+                <div style="font-size:0.78rem; color:#8b949e;">Tenure: <strong style="color:#e6edf3;">{{ product.tenure }}</strong></div>
+                {% endif %}
+                {% if product.description %}
+                <div style="font-size:0.76rem; color:#8b949e; margin-top:6px;">{{ product.description }}</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Footer links -->
+    <div style="display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-top:1.5rem; font-size:0.82rem;">
+        <a href="{{ url_for('improvement_portal', app_id=app_id) }}" style="color:#58a6ff;">Improvement Portal</a>
+        <span style="color:#30363d;">|</span>
+        <a href="{{ url_for('dashboard_page') }}" style="color:#58a6ff;">Dashboard</a>
+        <span style="color:#30363d;">|</span>
+        <a href="{{ url_for('apply_page') }}" style="color:#58a6ff;">New Application</a>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---- Language toggle (summary) ----
+function toggleLang(btn) {
+    const enEl = document.getElementById('summary-en');
+    const hiEl = document.getElementById('summary-hi');
+    if (!enEl || !hiEl) return;
+    const showingEn = enEl.classList.contains('visible');
+    enEl.classList.toggle('visible', !showingEn);
+    hiEl.classList.toggle('visible', showingEn);
+    btn.textContent = showingEn ? '🇮🇳 English' : '🇮🇳 Hindi';
+}
+
+// ---- Reason code language toggle ----
+function toggleRcLang(idx, btn) {
+    const enEl = document.getElementById('rc-en-' + idx);
+    const hiEl = document.getElementById('rc-hi-' + idx);
+    if (!enEl || !hiEl) return;
+    const showingEn = enEl.style.display !== 'none';
+    enEl.style.display = showingEn ? 'none' : 'block';
+    hiEl.style.display = showingEn ? 'block' : 'none';
+    btn.textContent = showingEn ? '🇮🇳 English' : '🇮🇳 Hindi';
+}
+
+// ---- SHAP horizontal bar chart ----
+document.addEventListener('DOMContentLoaded', () => {
+    {% if score_data.reason_codes %}
+    const reasonCodes = {{ score_data.reason_codes | tojson }};
+    const shapLabels = reasonCodes.map(rc => rc.short_text || rc.code || 'Factor');
+    const shapValues = reasonCodes.map(rc => typeof rc.impact === 'number' ? rc.impact : 0);
+    const shapColors = shapValues.map(v => v >= 0 ? 'rgba(40,167,69,0.75)' : 'rgba(239,68,68,0.75)');
+
+    const shapCtx = document.getElementById('shapChart');
+    if (shapCtx) {
+        new Chart(shapCtx, {
+            type: 'bar',
+            data: {
+                labels: shapLabels,
+                datasets: [{
+                    label: 'Score Impact (pts)',
+                    data: shapValues,
+                    backgroundColor: shapColors,
+                    borderRadius: 4,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                const v = ctx.parsed.x;
+                                return (v >= 0 ? '+' : '') + v.toFixed(1) + ' pts';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: '#30363d' },
+                        ticks: { color: '#8b949e', font: { size: 11 } }
+                    },
+                    y: {
+                        grid: { color: '#30363d' },
+                        ticks: { color: '#e6edf3', font: { size: 11 } }
+                    }
+                }
+            }
+        });
+    }
+    {% endif %}
+
+    // ---- 6-month trajectory line chart ----
+    {% if score_data.improvement_steps %}
+    const improvSteps = {{ score_data.improvement_steps | tojson }};
+    const trajScores = improvSteps.trajectory_scores || [];
+    const trajCtx = document.getElementById('trajectoryChart');
+    if (trajCtx && trajScores.length > 0) {
+        const labels = trajScores.map((_, i) => 'Month ' + (i + 1));
+        new Chart(trajCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Projected Score',
+                    data: trajScores,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37,99,235,0.12)',
+                    borderWidth: 2.5,
+                    pointBackgroundColor: '#2563eb',
+                    pointRadius: 5,
+                    tension: 0.35,
+                    fill: true,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { labels: { color: '#8b949e', font: { size: 11 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => 'Score: ' + ctx.parsed.y
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: '#30363d' },
+                        ticks: { color: '#8b949e', font: { size: 11 } }
+                    },
+                    y: {
+                        grid: { color: '#30363d' },
+                        ticks: { color: '#8b949e', font: { size: 11 } },
+                        suggestedMin: Math.max(300, Math.min(...trajScores) - 20),
+                        suggestedMax: Math.min(850, Math.max(...trajScores) + 20)
+                    }
+                }
+            }
+        });
+    }
+    {% endif %}
+});
+</script>
+{% endblock %}

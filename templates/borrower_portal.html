@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Borrower Portal — CredVeda{% endblock %}
+{% block content %}
+<div class="container" style="max-width:540px;padding-top:3rem;padding-bottom:4rem;">
+
+    <div style="text-align:center;margin-bottom:2rem;">
+        <div style="font-size:2.5rem;color:var(--good);margin-bottom:.75rem;"><i class="fas fa-user-check"></i></div>
+        <h1 style="font-size:1.75rem;margin-bottom:.5rem;">Check your loan status</h1>
+        <p class="muted" style="max-width:44ch;margin:0 auto;line-height:1.6;">
+            Enter the Applicant ID your loan officer gave you to view your credit score, reason codes and
+            eligible government schemes.
+        </p>
+    </div>
+
+    <div class="card" style="padding:1.75rem;">
+        {% if error %}
+        <div class="alert alert-critical mb-3">
+            <span class="alert-icon"><i class="fas fa-circle-exclamation"></i></span>
+            <div class="alert-body"><p class="alert-text">{{ error }}</p></div>
+        </div>
+        {% endif %}
+
+        <form method="post">
+            <div class="field">
+                <label class="label" for="applicant_id">Applicant ID</label>
+                <input class="input" id="applicant_id" name="applicant_id" type="text"
+                       placeholder="e.g. APP-00042" required autofocus
+                       style="font-family:monospace;letter-spacing:.05em;text-transform:uppercase;">
+                <p class="help">Your loan officer assigned this ID when they assessed your application.</p>
+            </div>
+            <button class="btn btn-primary btn-block btn-lg mt-2" type="submit"
+                    style="background:var(--good);border-color:var(--good);">
+                <i class="fas fa-search"></i> View my credit report
+            </button>
+        </form>
+    </div>
+
+    <div class="card mt-3" style="padding:1.25rem;background:var(--bg-soft);">
+        <div style="font-size:.82rem;color:var(--text-dim);line-height:1.7;">
+            <strong style="color:var(--text);">What you'll see:</strong><br>
+            Your credit score and tier · The reasons behind it in plain language ·
+            Eligible government loan schemes (MUDRA, SVANidhi, CGTMSE, etc.) ·
+            Steps to improve your score over the next 6 months.
+        </div>
+    </div>
+
+    <p class="help center mt-3">
+        Are you a bank or lender? <a href="{{ url_for('login') }}">Sign in here</a>
+    </p>
+
+</div>
+{% endblock %}

@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+
+{% block title %}Lender Operations Queue — CredVeda{% endblock %}
+
+{% block head_extra %}
+<style>
+    .score-badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-weight: 700;
+        font-size: 0.85em;
+        letter-spacing: 0.03em;
+    }
+    .guardrail-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 0.82em;
+    }
+    .stat-card {
+        background-color: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px 24px;
+        text-align: center;
+    }
+    .stat-card .stat-value {
+        font-size: 2em;
+        font-weight: 700;
+        color: var(--text);
+        line-height: 1.1;
+        margin-bottom: 4px;
+    }
+    .stat-card .stat-label {
+        font-size: 0.82em;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        margin-bottom: 0;
+    }
+    .filter-bar {
+        background-color: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+    }
+    .filter-bar select, .filter-bar input {
+        background-color: var(--input-bg, var(--bg-soft));
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 12px;
+        font-size: 0.88em;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .filter-bar select:focus, .filter-bar input:focus {
+        border-color: var(--accent);
+    }
+    .filter-label {
+        color: var(--text-dim);
+        font-size: 0.82em;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0;
+    }
+    .ops-table-wrap {
+        overflow-x: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+    }
+    .ops-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9em;
+    }
+    .ops-table th {
+        background-color: var(--bg-soft);
+        color: var(--accent);
+        font-weight: 700;
+        padding: 12px 14px;
+        text-align: left;
+        white-space: nowrap;
+        border-bottom: 1px solid var(--border);
+    }
+    .ops-table td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text);
+        vertical-align: middle;
+    }
+    .ops-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+    .ops-table tbody tr:hover td {
+        background-color: var(--bg-soft);
+    }
+    .ops-table tbody tr.hidden-row {
+        display: none;
+    }
+    .action-btn {
+        display: inline-block;
+        padding: 5px 13px;
+        border-radius: 6px;
+        font-size: 0.82em;
+        font-weight: 600;
+        text-decoration: none;
+        transition: opacity 0.15s;
+        margin-right: 6px;
+        white-space: nowrap;
+    }
+    .action-btn:hover { opacity: 0.82; text-decoration: none; }
+    .btn-view { background-color: var(--brand); color: #fff; }
+    .btn-improve { background-color: var(--bg-soft); color: var(--accent); border: 1px solid var(--border); }
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+    }
+    .empty-state .empty-icon {
+        font-size: 3.5em;
+        margin-bottom: 16px;
+        color: var(--text-faint);
+    }
+    .empty-state h3 {
+        color: var(--accent);
+        margin-bottom: 8px;
+    }
+    .empty-state p {
+        color: var(--text-dim);
+        margin-bottom: 24px;
+    }
+    .confidence-bar-wrap {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+    }
+    .confidence-bar-bg {
+        width: 60px;
+        height: 6px;
+        background-color: var(--border);
+        border-radius: 3px;
+        overflow: hidden;
+        flex-shrink: 0;
+    }
+    .confidence-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, var(--brand), var(--accent));
+    }
+    .pagination-note {
+        text-align: center;
+        color: var(--text-dim);
+        font-size: 0.82em;
+        padding-top: 10px;
+        margin-bottom: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="padding: 10px 0 30px;">
+
+    <!-- Page Header -->
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:28px;">
+        <div>
+            <h1 style="font-size:1.85em; margin-bottom:4px; color:var(--text);">
+                <i class="fas fa-list-check" style="color:var(--accent); margin-right:10px;"></i>Lender Operations Queue
+            </h1>
+            <p style="color:var(--text-dim); margin-bottom:0; font-size:0.95em;">Review credit-scored applications and take action on pending borrower files</p>
+        </div>
+        <a href="{{ url_for('apply_page') }}" class="btn btn-primary" style="font-size:0.9em; padding:9px 20px; display:inline-flex; align-items:center; gap:8px; text-decoration:none;">
+            <i class="fas fa-plus"></i> New Application
+        </a>
+    </div>
+
+    <!-- Stats Row -->
+    {% set total_apps = queue|length %}
+    {% set high_risk_count = queue|rejectattr('guardrail_severity', 'equalto', 'CLEAR')|list|length %}
+    {% set ready_count = queue|selectattr('approved', 'equalto', true)|list|length %}
+    {% set avg_score = (queue|sum(attribute='credit_score') / total_apps)|round(1) if total_apps > 0 else 0 %}
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:16px; margin-bottom:24px;">
+        <div class="stat-card">
+            <div class="stat-value text-blue-accent">{{ total_apps }}</div>
+            <div class="stat-label">Total Applications</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color:#f0b429;">{{ avg_score }}</div>
+            <div class="stat-label">Avg Credit Score</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value text-red-accent">{{ high_risk_count }}</div>
+            <div class="stat-label">High Risk (Guardrail)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value text-green-accent">{{ ready_count }}</div>
+            <div class="stat-label">Ready to Lend (≥55)</div>
+        </div>
+    </div>
+
+    {% if queue %}
+
+    <!-- Filter Bar -->
+    <div class="filter-bar" style="margin-bottom:20px;">
+        <div>
+            <div class="filter-label" style="margin-bottom:4px;">Score Band</div>
+            <select id="filter-band" onchange="applyFilters()">
+                <option value="ALL">All Tiers</option>
+                <option value="EXCELLENT">Excellent (750+)</option>
+                <option value="GOOD">Good (650–749)</option>
+                <option value="FAIR">Fair (550–649)</option>
+                <option value="POOR">Poor (&lt;550)</option>
+            </select>
+        </div>
+        <div>
+            <div class="filter-label" style="margin-bottom:4px;">Guardrail</div>
+            <select id="filter-guardrail" onchange="applyFilters()">
+                <option value="ALL">All</option>
+                <option value="CLEAR">CLEAR</option>
+                <option value="WARNING">WARNING</option>
+                <option value="CRITICAL">CRITICAL</option>
+            </select>
+        </div>
+        <div style="flex:1; min-width:200px;">
+            <div class="filter-label" style="margin-bottom:4px;">Search</div>
+            <input type="text" id="filter-search" placeholder="Search by name or state…" oninput="applyFilters()" style="width:100%; box-sizing:border-box;">
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+            <button onclick="clearFilters()" style="background:none; border:1px solid #30363d; color:#8b949e; border-radius:6px; padding:7px 14px; cursor:pointer; font-size:0.85em; margin-top:20px;">
+                <i class="fas fa-times" style="margin-right:5px;"></i>Clear
+            </button>
+        </div>
+    </div>
+
+    <!-- Applications Table -->
+    <div class="ops-table-wrap">
+        <table class="ops-table" id="ops-table">
+            <thead>
+                <tr>
+                    <th>Applicant</th>
+                    <th>Business Type</th>
+                    <th>State</th>
+                    <th>Score</th>
+                    <th>Band</th>
+                    <th>Confidence</th>
+                    <th>Guardrail</th>
+                    <th>Loan Requested</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="ops-table-body">
+                {% for app in queue %}
+                <tr class="ops-row"
+                    data-band="{{ app.tier_label | upper }}"
+                    data-guardrail="{{ app.guardrail_severity | upper }}"
+                    data-name="{{ app.applicant_id | lower }}"
+                    data-state="{{ app.geography_state | lower }}">
+                    <td>
+                        <div style="font-weight:600; color:var(--text); font-size:0.92em;">{{ app.applicant_id }}</div>
+                        <div style="color:var(--text-dim); font-size:0.78em; margin-top:2px; margin-bottom:0;">{{ app.entity_type }}</div>
+                    </td>
+                    <td>
+                        <span style="color:var(--text);">{{ app.business_type }}</span>
+                    </td>
+                    <td>
+                        <span style="color:var(--text);">{{ app.geography_state }}</span>
+                        <div style="color:var(--text-dim); font-size:0.78em;">{{ app.geography_tier }}</div>
+                    </td>
+                    <td>
+                        <span class="score-badge"
+                            style="background-color:{{ app.score_color }}22; color:{{ app.score_color }}; border:1px solid {{ app.score_color }}55;">
+                            {{ app.credit_score }}
+                        </span>
+                    </td>
+                    <td>
+                        <span style="font-size:0.82em; color:{{ app.score_color }}; font-weight:600;">
+                            {{ app.tier_label }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="confidence-bar-wrap">
+                            <div class="confidence-bar-bg">
+                                <div class="confidence-bar-fill" style="width:{{ (app.data_completeness * 100)|round|int }}%;"></div>
+                            </div>
+                            <span style="font-size:0.82em; color:#8b949e; margin-bottom:0;">{{ (app.data_completeness * 100)|round|int }}%</span>
+                        </div>
+                        <div style="font-size:0.75em; color:var(--text-dim); margin-top:2px;">{{ app.confidence_label }}</div>
+                    </td>
+                    <td>
+                        {% if app.guardrail_severity == 'CLEAR' %}
+                            <span class="guardrail-badge" style="background:#14532d33; color:#4ade80; border:1px solid #14532d;">
+                                <i class="fas fa-check-circle" style="font-size:0.9em;"></i> CLEAR
+                            </span>
+                        {% elif app.guardrail_severity == 'WARNING' %}
+                            <span class="guardrail-badge" style="background:#78350f33; color:#fbbf24; border:1px solid #78350f;">
+                                <i class="fas fa-exclamation-triangle" style="font-size:0.9em;"></i> WARNING
+                            </span>
+                        {% else %}
+                            <span class="guardrail-badge" style="background:#7f1d1d33; color:#f87171; border:1px solid #7f1d1d;">
+                                <i class="fas fa-times-circle" style="font-size:0.9em;"></i> CRITICAL
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span style="color:var(--text); font-weight:600;">
+                            ₹{{ "{:,.0f}".format(app.requested_loan_amount) }}
+                        </span>
+                    </td>
+                    <td style="white-space:nowrap;">
+                        <a href="{{ url_for('applicant_detail', applicant_id=app.applicant_id) }}" class="action-btn btn-view">
+                            <i class="fas fa-eye" style="margin-right:4px;"></i>Open
+                        </a>
+                        {% if app.listable %}
+                        <a href="{{ url_for('marketplace') }}" class="action-btn btn-improve">
+                            <i class="fas fa-store" style="margin-right:4px;"></i>List
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- No results row (hidden by default) -->
+        <div id="no-results" style="display:none; text-align:center; padding:40px 20px; color:#8b949e;">
+            <i class="fas fa-search" style="font-size:2em; margin-bottom:12px; display:block; color:#30363d;"></i>
+            No applications match your current filters.
+            <button onclick="clearFilters()" style="display:block; margin:12px auto 0; background:none; border:none; color:#58a6ff; cursor:pointer; font-size:0.9em;">Clear filters</button>
+        </div>
+    </div>
+
+    <p class="pagination-note" style="margin-top:14px;">Showing all {{ queue|length }} application{{ 's' if queue|length != 1 else '' }}</p>
+
+    {% else %}
+
+    <!-- Empty State -->
+    <div class="bg-dark-card" style="margin-top:20px;">
+        <div class="empty-state">
+            <div class="empty-icon"><i class="fas fa-inbox"></i></div>
+            <h3>No applications in the queue</h3>
+            <p>There are no credit-scored applications to review yet. Start by submitting a new application.</p>
+            <a href="/apply" class="btn-primary" style="display:inline-block; text-decoration:none;">
+                <i class="fas fa-plus" style="margin-right:8px;"></i>Submit Application
+            </a>
+        </div>
+    </div>
+
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function applyFilters() {
+        const bandFilter = document.getElementById('filter-band').value.toUpperCase();
+        const guardrailFilter = document.getElementById('filter-guardrail').value.toUpperCase();
+        const searchTerm = document.getElementById('filter-search').value.toLowerCase().trim();
+
+        const rows = document.querySelectorAll('#ops-table-body .ops-row');
+        let visibleCount = 0;
+
+        rows.forEach(function(row) {
+            const band = (row.getAttribute('data-band') || '').toUpperCase();
+            const guardrail = (row.getAttribute('data-guardrail') || '').toUpperCase();
+            const name = (row.getAttribute('data-name') || '').toLowerCase();
+            const state = (row.getAttribute('data-state') || '').toLowerCase();
+
+            const bandMatch = bandFilter === 'ALL' || band === bandFilter;
+            const guardrailMatch = guardrailFilter === 'ALL' || guardrail === guardrailFilter;
+            const searchMatch = searchTerm === '' || name.includes(searchTerm) || state.includes(searchTerm);
+
+            if (bandMatch && guardrailMatch && searchMatch) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        const noResults = document.getElementById('no-results');
+        if (noResults) {
+            noResults.style.display = visibleCount === 0 ? 'block' : 'none';
+        }
+    }
+
+    function clearFilters() {
+        document.getElementById('filter-band').value = 'ALL';
+        document.getElementById('filter-guardrail').value = 'ALL';
+        document.getElementById('filter-search').value = '';
+        applyFilters();
+    }
+</script>
+{% endblock %}

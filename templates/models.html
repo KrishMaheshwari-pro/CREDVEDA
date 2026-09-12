@@ -104,6 +104,25 @@
         </div>
     </div>
 
+    <!-- Feature importance chart -->
+    {% if feature_importance %}
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0"><i class="fas fa-ranking-star" style="color:var(--brand)"></i> Feature importance</p>
+                <p class="card-sub">Mean decrease in impurity across all trees — how much each signal shaped the model overall</p>
+            </div>
+        </div>
+        <div class="chart-box" style="height:340px;"><canvas id="fiChart"></canvas></div>
+        <p class="help mt-2 mb-0">
+            This shows global importance — which features matter most across all applicants.
+            Per-applicant direction (did it help or hurt <em>this</em> borrower?) is shown on the Applicant Detail page.
+            Protected attributes (gender, geography, business type) appear here as grey bars — they are in the data only
+            for the fairness audit, never as scoring inputs.
+        </p>
+    </div>
+    {% endif %}
+
     <div class="grid grid-2">
         <div class="card">
             <p class="card-title"><i class="fas fa-magnifying-glass-chart" style="color:var(--warn)"></i> Data-consistency screen</p>
@@ -159,6 +178,34 @@
             }
         }
     });
+
+    {% if feature_importance %}
+    const fi = {{ feature_importance|tojson }};
+    const fiEntries = Object.entries(fi).sort((a,b) => b[1]-a[1]).slice(0, 16);
+    const PROTECTED = ['gender','geography_tier','geography_state','business_type','entity_type'];
+    const fiColors = fiEntries.map(([k]) =>
+        PROTECTED.some(p => k.startsWith(p)) ? 'rgba(139,148,158,.45)' : 'rgba(79,140,255,.8)'
+    );
+    new Chart(document.getElementById('fiChart'), {
+        type: 'bar',
+        data: {
+            labels: fiEntries.map(([k]) => k.replace(/_/g,' ')),
+            datasets: [{ data: fiEntries.map(([,v]) => +(v*100).toFixed(2)),
+                         backgroundColor: fiColors, borderRadius: 4, borderSkipped: false }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: {
+                callbacks: { label: c => c.parsed.x.toFixed(2) + '% importance' }
+            }},
+            scales: {
+                x: { ticks: { color: css('--text-faint'), font:{size:10}, callback: v=>v+'%' },
+                     grid: { color: css('--border-soft') } },
+                y: { ticks: { color: css('--text-dim'), font:{size:11} }, grid:{display:false} }
+            }
+        }
+    });
+    {% endif %}
 
     {% if buckets %}
     const buckets = {{ buckets|tojson }};

@@ -47,6 +47,23 @@
                 </button>
             </form>
             {% endif %}
+            {% if is_listable %}
+              {% if existing_listing %}
+              <a href="{{ url_for('marketplace_listing_detail', listing_id=existing_listing.listing_id) }}"
+                 class="btn btn-ghost nowrap" style="border-color:#22c55e; color:#22c55e;">
+                  <i class="fas fa-store"></i> View on Marketplace
+              </a>
+              <a href="{{ url_for('credit_passport', applicant_id=applicant.applicant_id) }}"
+                 target="_blank" class="btn btn-ghost nowrap" style="border-color:#4f8cff; color:#4f8cff;">
+                  <i class="fas fa-id-card"></i> Credit Passport
+              </a>
+              {% else %}
+              <button onclick="document.getElementById('listModal').style.display='flex'"
+                      class="btn btn-ghost nowrap" style="border-color:#22c55e; color:#22c55e;">
+                  <i class="fas fa-store"></i> List on Marketplace
+              </button>
+              {% endif %}
+            {% endif %}
         </div>
     </div>
 
@@ -259,6 +276,47 @@
         </div>
     </div>
 
+    <!-- Risk-Based Pricing Recommendation -->
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0"><i class="fas fa-percent" style="color:var(--brand)"></i>
+                    Risk-Based Pricing</p>
+                <p class="card-sub">Recommended rate band for this credit profile</p>
+            </div>
+        </div>
+        {% set score = result.credit_score %}
+        {% set rate_mid = [8.5, [28.0, 42.0 - score / 38.0] | min] | max %}
+        {% set rate_low = [8.5, rate_mid - 0.75] | max %}
+        {% set rate_high = [30.0, rate_mid + 0.75] | min %}
+        {% set ltv = [40, [80, ((score - 300) / 6) | int] | min] | max %}
+        <div class="grid grid-3">
+            <div>
+                <p class="stat-label">Recommended rate</p>
+                <p class="stat-value" style="color:var(--accent);">{{ rate_low | round(1) }}–{{ rate_high | round(1) }}%</p>
+                <p class="stat-foot">per annum</p>
+            </div>
+            <div>
+                <p class="stat-label">Max LTV</p>
+                <p class="stat-value" style="color:var(--{{ result.tier_tone }});">{{ ltv }}%</p>
+                <p class="stat-foot">of collateral value</p>
+            </div>
+            <div>
+                <p class="stat-label">Collateral-free?</p>
+                <p class="stat-value" style="font-size:1.1rem; color:var({{ '--good' if score >= 650 else '--warn' }});">
+                    {{ 'Yes (CGTMSE eligible)' if score >= 650 else 'No — collateral needed' }}
+                </p>
+                <p class="stat-foot">Score threshold: 650</p>
+            </div>
+        </div>
+        <p class="help mt-2 mb-0" style="font-size:.78rem;">
+            Rates are model-derived recommendations.
+            A score of {{ score }} maps to the
+            <strong>{{ result.tier_label }}</strong> tier.
+            Final rate is set by the lender — this is a risk-adjusted floor/ceiling input.
+        </p>
+    </div>
+
     <!-- Affordability / FOIR -->
     {% if result.foir %}
     <div class="card mb-3">
@@ -311,6 +369,39 @@
                 Recommend verifying the underlying data before deciding. This is a routing signal for a human,
                 never an automatic rejection.
             </p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Matched loan schemes -->
+    {% if matched_products %}
+    <div class="card mb-3">
+        <div class="card-head">
+            <div>
+                <p class="card-title mb-0"><i class="fas fa-landmark" style="color:var(--brand)"></i>
+                    Eligible government schemes</p>
+                <p class="card-sub">Based on score, entity type, and gender</p>
+            </div>
+        </div>
+        <div class="grid grid-3" style="gap:.75rem;">
+        {% for p in matched_products %}
+        <div style="background:var(--bg-soft); border:1px solid var(--border-soft); border-radius:10px; padding:.85rem;">
+            <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.45rem;">
+                <span style="background:{{ p.tag_color or '#4f8cff' }}; color:#fff;
+                             padding:2px 9px; border-radius:4px; font-size:.7rem; font-weight:700; white-space:nowrap;">
+                    {{ p.tag or p.scheme_id }}
+                </span>
+            </div>
+            <div style="font-weight:700; font-size:.88rem; margin-bottom:.25rem;">{{ p.name }}</div>
+            <div style="font-size:.78rem; color:var(--text-dim);">
+                Up to ₹{{ '{:,.0f}'.format(p.max_loan_inr) }}<br>
+                {{ p.interest_rate }}% p.a. · {{ p.max_tenure_months }} months
+            </div>
+            {% if p.note %}
+            <div style="font-size:.72rem; color:var(--text-faint); margin-top:.3rem;">{{ p.note }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
         </div>
     </div>
     {% endif %}
@@ -441,6 +532,87 @@
     </div>
 
 </div>
+
+<!-- List on Marketplace modal -->
+<div id="listModal"
+     style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.65);
+            align-items:center; justify-content:center; padding:1rem;">
+  <div style="background:var(--card); border:1px solid var(--border); border-radius:12px;
+              padding:1.5rem; max-width:480px; width:100%; max-height:90vh; overflow-y:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <div style="font-weight:700; font-size:1.05rem;"><i class="fas fa-store" style="color:#22c55e;"></i> List on Marketplace</div>
+      <button onclick="document.getElementById('listModal').style.display='none'"
+              style="background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--muted);">×</button>
+    </div>
+
+    {% set score = result.credit_score %}
+    {% set rate_mid = [8.5, [28.0, 42.0 - score / 38.0] | min] | max %}
+    <form method="post" action="{{ url_for('marketplace_list_applicant', applicant_id=applicant.applicant_id) }}">
+      <div style="margin-bottom:.75rem;">
+        <label style="font-size:.78rem; color:var(--muted); display:block; margin-bottom:.25rem;">
+          Loan purpose
+        </label>
+        <select name="purpose" class="form-control">
+          <option>Working capital</option>
+          <option>Equipment purchase</option>
+          <option>Business expansion</option>
+          <option>Inventory financing</option>
+          <option>Personal credit</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:.75rem;">
+        <label style="font-size:.78rem; color:var(--muted); display:block; margin-bottom:.25rem;">
+          Floor interest rate (% p.a.) *
+        </label>
+        <div style="display:flex; align-items:center; gap:.4rem;">
+          <input type="number" name="interest_rate" class="form-control"
+                 min="4" max="36" step="0.1"
+                 value="{{ rate_mid | round(1) }}" required style="flex:1;">
+          <span style="font-size:.8rem; color:var(--muted); white-space:nowrap;">% p.a.</span>
+        </div>
+        <div style="font-size:.72rem; color:var(--muted); margin-top:.2rem;">
+          Risk-based recommendation: {{ [8.5, rate_mid - 0.75] | max | round(1) }}–{{ [30.0, rate_mid + 0.75] | min | round(1) }}%.
+          Lenders proposing ≤ this are auto-accepted.
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:.75rem; margin-bottom:.75rem;">
+        <div>
+          <label style="font-size:.78rem; color:var(--muted); display:block; margin-bottom:.25rem;">
+            Borrower email (to notify)
+          </label>
+          <input type="email" name="borrower_email" class="form-control" placeholder="optional">
+        </div>
+        <div>
+          <label style="font-size:.78rem; color:var(--muted); display:block; margin-bottom:.25rem;">
+            Borrower phone
+          </label>
+          <input type="tel" name="borrower_phone" class="form-control" placeholder="optional">
+        </div>
+      </div>
+
+      <div style="background:rgba(79,140,255,.07); border:1px solid #4f8cff30; border-radius:8px;
+                  padding:.65rem .85rem; font-size:.77rem; color:var(--muted); margin-bottom:1rem; line-height:1.6;">
+        <i class="fas fa-circle-info" style="color:var(--accent);"></i>
+        Listing is open for co-funding from other lenders on the marketplace.
+        Loan disburses automatically when 100% is committed.
+        The applicant's credit passport can be shared once listed.
+      </div>
+
+      <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+        <button type="submit" class="btn" style="flex:1;">
+          <i class="fas fa-check"></i> Confirm listing
+        </button>
+        <button type="button" onclick="document.getElementById('listModal').style.display='none'"
+                style="flex:1; padding:.5rem; background:none; border:1px solid var(--border);
+                       border-radius:8px; color:var(--text); cursor:pointer; font-size:.85rem;">
+          Cancel
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -507,35 +679,47 @@
     const options = { physics: { enabled: true }, interaction: { zoomView: false } };
     new vis.Network(container, data, options);
 
-    // Radar Chart
+    // Radar Chart — all values are 0-100
+    const radarData = [
+        Math.round({{ (applicant.digital_adoption_ratio or 0) }} * 100),
+        Math.round({{ (applicant.gst_filing_regularity or 0) if applicant.gst_registered else 50 }} * 100),
+        Math.round({{ (applicant.utility_ontime_ratio or 0) }} * 100),
+        Math.round({{ (applicant.rent_ontime_ratio or 0) }} * 100),
+        Math.max(0, Math.min(100, Math.round(100 - {{ (applicant.repayment_burden_ratio or 0) }} * 100))),
+        Math.round({{ ((applicant.inflow_growth_rate_6m or 0) + 0.3) / 0.8 * 100 }})
+    ];
     new Chart(document.getElementById('radarChart'), {
         type: 'radar',
         data: {
-            labels: ['Digital Adoption', 'GST Regularity', 'Inflow Growth', 'Cash Cushion', 'Low Leverage'],
+            labels: ['Digital Adoption', 'GST / Filing', 'Utility Discipline', 'Rent Discipline', 'Debt Headroom', 'Income Growth'],
             datasets: [{
-                label: 'Applicant',
-                data: [
-                    {{ (applicant.digital_adoption_ratio * 100)|default(0)|int }},
-                    {{ (applicant.gst_filing_regularity * 100)|default(0)|int }},
-                    {{ ((applicant.inflow_growth_rate_6m + 1)*50)|default(50)|int }}, 
-                    {{ (applicant.cash_flow_margin * 100)|default(0)|int }},
-                    {{ 100 - (applicant.repayment_burden_ratio * 100)|default(0)|int }}
-                ],
-                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                label: 'This applicant',
+                data: radarData,
+                backgroundColor: 'rgba(59,130,246,.18)',
                 borderColor: '#3b82f6',
-                pointBackgroundColor: '#3b82f6'
+                pointBackgroundColor: '#3b82f6',
+                pointRadius: 4,
             }, {
-                label: 'Healthy Average',
-                data: [80, 90, 60, 40, 70],
-                backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                label: 'Healthy portfolio avg',
+                data: [78, 82, 88, 85, 65, 55],
+                backgroundColor: 'rgba(16,185,129,.12)',
                 borderColor: '#10b981',
-                pointBackgroundColor: '#10b981'
+                pointBackgroundColor: '#10b981',
+                pointRadius: 4,
             }]
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { r: { ticks: { display: false } } }
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } } },
+            scales: {
+                r: {
+                    min: 0, max: 100,
+                    ticks: { display: false, stepSize: 25 },
+                    grid: { color: '#30363d' },
+                    pointLabels: { color: '#c9d1d9', font: { size: 11 } },
+                    angleLines: { color: '#30363d' }
+                }
+            }
         }
     });
 </script>

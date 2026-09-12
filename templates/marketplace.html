@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Credit Marketplace — CredVeda{% endblock %}
+{% block head_extra %}
+<style>
+.mkt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.1rem;
+}
+.listing-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.2rem;
+  display: flex; flex-direction: column; gap: .75rem;
+  transition: border-color .2s, box-shadow .2s;
+  text-decoration: none; color: inherit;
+}
+.listing-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.score-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 52px; height: 52px; border-radius: 50%;
+  border: 3px solid; font-weight: 800; font-size: 1rem;
+}
+.fund-bar-wrap {
+  height: 6px; background: var(--border); border-radius: 4px; overflow: hidden;
+}
+.fund-bar { height: 100%; border-radius: 4px; transition: width .5s; }
+.stat-box {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 1rem 1.25rem; text-align: center;
+}
+.stat-box .stat-val { font-size: 1.7rem; font-weight: 800; }
+.stat-box .stat-lbl { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+  margin-bottom: 1.25rem;
+}
+.filter-pill {
+  padding: 4px 12px; border-radius: 20px; font-size: .78rem; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  transition: all .15s;
+}
+.filter-pill.active, .filter-pill:hover {
+  border-color: var(--accent); color: var(--accent);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:1200px; padding-top:2rem; padding-bottom:3rem;">
+
+  <!-- Header -->
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.75rem;">
+    <div>
+      <h1 style="font-size:1.85rem; font-weight:800; margin-bottom:.35rem;">Credit Marketplace</h1>
+      <p style="color:var(--muted); max-width:60ch;">
+        Verified, scored applicants open for co-funding. Multiple lenders can share a single loan,
+        spreading risk and driving down rates for creditworthy borrowers.
+      </p>
+    </div>
+    <a href="{{ url_for('lender_ops') }}" class="btn" style="white-space:nowrap;">
+      <i class="fas fa-list-check"></i> Ops Queue
+    </a>
+  </div>
+
+  <!-- Stats strip -->
+  <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:.8rem; margin-bottom:1.75rem;">
+    {% set open_count   = stats.get('open_count', 0) or 0 %}
+    {% set funded_count = stats.get('funded_count', 0) or 0 %}
+    {% set open_amount  = stats.get('open_amount', 0) or 0 %}
+    {% set avg_score    = stats.get('avg_score', 0) or 0 %}
+    {% set total        = stats.get('total', 0) or 0 %}
+    <div class="stat-box">
+      <div class="stat-val">{{ open_count }}</div>
+      <div class="stat-lbl">Open listings</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val">{{ funded_count }}</div>
+      <div class="stat-lbl">Fully funded</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" style="font-size:1.2rem;">₹{{ "{:,.0f}".format(open_amount / 100000) }}L</div>
+      <div class="stat-lbl">Open pipeline</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val">{{ avg_score | int }}</div>
+      <div class="stat-lbl">Avg open score</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val">{{ total }}</div>
+      <div class="stat-lbl">Total listed</div>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar" id="filterBar">
+    <span style="font-size:.78rem; color:var(--muted); margin-right:.25rem;">Filter:</span>
+    <button class="filter-pill active" onclick="filterCards('all', this)">All</button>
+    <button class="filter-pill" onclick="filterCards('good', this)">
+      <i class="fas fa-circle" style="color:#22c55e; font-size:.5rem;"></i> Excellent
+    </button>
+    <button class="filter-pill" onclick="filterCards('warn', this)">
+      <i class="fas fa-circle" style="color:#f59e0b; font-size:.5rem;"></i> Good
+    </button>
+    <button class="filter-pill" onclick="filterCards('bad', this)">
+      <i class="fas fa-circle" style="color:#ef4444; font-size:.5rem;"></i> Fair
+    </button>
+    <button class="filter-pill" onclick="filterCards('individual', this)">Individual</button>
+    <button class="filter-pill" onclick="filterCards('business', this)">Small Business</button>
+    <button class="filter-pill" onclick="filterCards('partial', this)">Partially funded</button>
+    <span style="margin-left:auto; font-size:.78rem; color:var(--muted);" id="results-count">
+      {{ listings | length }} listing{{ 's' if listings | length != 1 else '' }}
+    </span>
+  </div>
+
+  {% if listings %}
+  <div class="mkt-grid" id="listingGrid">
+    {% for lst in listings %}
+    {% set tier_color = '#22c55e' if lst.tier_tone == 'good' else ('#f59e0b' if lst.tier_tone == 'warn' else '#ef4444') %}
+    <a class="listing-card"
+       href="{{ url_for('marketplace_listing_detail', listing_id=lst.listing_id) }}"
+       data-tier="{{ lst.tier_tone }}"
+       data-entity="{{ lst.entity_type | lower }}"
+       data-pct="{{ lst.pct_funded }}">
+
+      <!-- Card header -->
+      <div style="display:flex; align-items:center; gap:.85rem;">
+        <div class="score-badge" style="color:{{ tier_color }}; border-color:{{ tier_color }};">
+          {{ lst.credit_score }}
+        </div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            {{ lst.listing_id }}
+          </div>
+          <div style="font-size:.75rem; color:var(--muted);">
+            {{ lst.entity_type }} · {{ lst.geography_tier or 'Urban' }}
+          </div>
+          <span style="font-size:.7rem; font-weight:700; color:{{ tier_color }};">{{ lst.tier_label }}</span>
+        </div>
+        {% if lst.listing_id in my_listing_ids %}
+        <span style="font-size:.7rem; background:var(--accent); color:#fff; padding:2px 8px; border-radius:10px; white-space:nowrap;">
+          My commitment
+        </span>
+        {% endif %}
+      </div>
+
+      <!-- Amount + purpose -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+        <div>
+          <div style="font-size:1.25rem; font-weight:800;">
+            ₹{{ "{:,.0f}".format(lst.amount_requested) }}
+          </div>
+          <div style="font-size:.75rem; color:var(--muted);">{{ lst.purpose or 'Working capital' }}</div>
+        </div>
+        <div style="text-align:right; font-size:.75rem; color:var(--muted);">
+          {{ lst.tenure_months }} months<br>
+          <span style="font-size:.7rem;">
+            {{ lst.n_lenders }} lender{{ 's' if lst.n_lenders != 1 else '' }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Funding progress bar -->
+      <div>
+        <div style="display:flex; justify-content:space-between; font-size:.72rem; color:var(--muted); margin-bottom:.3rem;">
+          <span>₹{{ "{:,.0f}".format(lst.total_committed) }} committed</span>
+          <span>{{ lst.pct_funded }}%</span>
+        </div>
+        <div class="fund-bar-wrap">
+          <div class="fund-bar"
+               style="width:{{ lst.pct_funded }}%; background:{{ tier_color }};"></div>
+        </div>
+      </div>
+
+      <!-- Business type tag -->
+      {% if lst.business_type %}
+      <div style="font-size:.72rem; color:var(--muted);">{{ lst.business_type }}</div>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div style="text-align:center; padding:4rem 1rem; color:var(--muted);">
+    <i class="fas fa-store" style="font-size:2.5rem; margin-bottom:.75rem; opacity:.4;"></i>
+    <p style="font-size:1rem; font-weight:600;">No open listings yet</p>
+    <p style="font-size:.85rem; max-width:42ch; margin:.4rem auto 1.25rem;">
+      Go to the <a href="{{ url_for('lender_ops') }}" style="color:var(--accent);">Ops Queue</a>
+      and list an approved applicant to create the first listing.
+    </p>
+    <p style="font-size:.78rem;">
+      Applicants with a score ≥ {{ min_score }} and no critical guardrail flags can be listed.
+    </p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterCards(key, btn) {
+  document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  let visible = 0;
+  document.querySelectorAll('#listingGrid .listing-card').forEach(card => {
+    let show = true;
+    if (key === 'good') show = card.dataset.tier === 'good';
+    else if (key === 'warn') show = card.dataset.tier === 'warn';
+    else if (key === 'bad') show = card.dataset.tier === 'bad';
+    else if (key === 'individual') show = card.dataset.entity.includes('individual');
+    else if (key === 'business') show = card.dataset.entity.includes('small business');
+    else if (key === 'partial') show = parseInt(card.dataset.pct) > 0 && parseInt(card.dataset.pct) < 100;
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('results-count').textContent =
+    visible + ' listing' + (visible !== 1 ? 's' : '');
+}
+</script>
+{% endblock %}

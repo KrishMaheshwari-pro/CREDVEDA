@@ -152,6 +152,14 @@ def train_model():
         for col in feature_cols
     }
 
+    feature_importance = {
+        col: round(float(imp), 6)
+        for col, imp in sorted(
+            zip(feature_cols, model.feature_importances_),
+            key=lambda x: x[1], reverse=True
+        )
+    }
+
     joblib.dump(model, MODEL_FILENAME)
     joblib.dump(scaler, SCALER_FILENAME)
     joblib.dump(feature_cols, FEATURES_FILENAME)
@@ -160,7 +168,8 @@ def train_model():
     joblib.dump(anomaly_model, ANOMALY_FILENAME)
     joblib.dump({"leaderboard": leaderboard, "calibration": calibration,
                  "production_model": EXPLAINABLE_MODEL, "n_train": len(X_train),
-                 "n_test": len(X_test)}, LEADERBOARD_FILENAME)
+                 "n_test": len(X_test), "feature_importance": feature_importance},
+                LEADERBOARD_FILENAME)
     print(f"\nSaved model, scaler, features, imputation, percentiles, anomaly screen and leaderboard.")
 
 
