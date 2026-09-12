@@ -1117,18 +1117,20 @@ def save_and_list():
         return redirect(url_for("apply_page"))
 
     applicant_id = "NEW-" + str(uuid.uuid4())[:8].upper()
+    # Rates are fixed, auto-computed server-side — not taken from the form, so
+    # they can't be edited before listing. Lenders bargain on the marketplace.
     floor_rate = _risk_based_rate(eff_score)
-    interest_rate = min(28.0, max(8.5, float(f.get("interest_rate") or floor_rate)))
+    interest_rate = floor_rate
     purpose = f.get("purpose", "Working capital")
     borrower_email = (f.get("borrower_email") or "").strip()[:120]
     borrower_phone = (f.get("borrower_phone") or "").strip()[:20]
     geography_tier = f.get("geography_tier", "Tier 2")
     business_type = f.get("business_type", "")
 
-    # Bank's own competing direct offer + collateral policy.
+    # Bank's own competing direct offer + collateral policy. The rate is a fixed
+    # auto-computed spread over the floor — not editable before listing.
     bank_direct = f.get("bank_direct_offer") == "on"
-    bank_offer_rate = (min(32.0, max(8.5, num("bank_offer_rate", floor_rate + 3.5)))
-                       if bank_direct else None)
+    bank_offer_rate = round(min(32.0, floor_rate + 3.5), 2) if bank_direct else None
     bank_offer_collateral = 1 if (bank_direct and f.get("bank_offer_collateral", "1") == "1") else 0
     bank_offer_collateral_detail = (f.get("bank_offer_collateral_detail") or "").strip()[:200]
 

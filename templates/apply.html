@@ -581,12 +581,14 @@
                     {% endfor %}
                     <div class="grid grid-2" style="gap:0 16px">
                         <div class="field">
-                            <label class="label">Interest rate</label>
+                            <label class="label">Floor interest rate <span class="hint">· auto-computed</span></label>
                             <div class="input-group">
-                                <input type="number" name="interest_rate" class="input" step="0.01" min="8.5" max="28" value="{{ floor_rate }}">
-                                <span class="input-suffix">%</span>
+                                <input type="text" class="input" value="{{ floor_rate }}" readonly
+                                       style="background:var(--bg-soft);cursor:not-allowed;font-weight:700;color:var(--{{ result.tier_tone }})">
+                                <span class="input-suffix"><i class="fas fa-lock" style="font-size:.72rem"></i> %</span>
                             </div>
-                            <p class="help">Floor {{ floor_rate }}% · cap 28%</p>
+                            <input type="hidden" name="interest_rate" value="{{ floor_rate }}">
+                            <p class="help">Risk-based, set from the score. Lenders can bargain above this on the marketplace.</p>
                         </div>
                         <div class="field">
                             <label class="label">Purpose</label>
@@ -618,12 +620,13 @@
                         </div>
                         <div id="bankOfferFields" class="grid grid-2" style="gap:0 16px">
                             <div class="field">
-                                <label class="label">Bank direct rate <span class="hint">· usually higher</span></label>
+                                <label class="label">Bank direct rate <span class="hint">· auto-computed</span></label>
                                 <div class="input-group">
-                                    <input type="number" name="bank_offer_rate" class="input" step="0.01" min="8.5" max="32"
-                                           value="{{ (floor_rate + 3.5)|round(2) }}">
-                                    <span class="input-suffix">%</span>
+                                    <input type="text" class="input" value="{{ (floor_rate + 3.5)|round(2) }}" readonly
+                                           style="background:var(--bg-soft);cursor:not-allowed;font-weight:700">
+                                    <span class="input-suffix"><i class="fas fa-lock" style="font-size:.72rem"></i> %</span>
                                 </div>
+                                <input type="hidden" name="bank_offer_rate" value="{{ (floor_rate + 3.5)|round(2) }}">
                             </div>
                             <div class="field">
                                 <label class="label">Collateral for bank offer</label>
