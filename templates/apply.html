@@ -162,6 +162,7 @@
                                 max="100" step="0.1" value="{{ form_values.txn_bounce_rate or 4 }}">
                             <span class="input-suffix">%</span>
                         </div>
+                        <p class="help">% of auto-debits / cheques that bounced in the last 12 months.</p>
                     </div>
                     <div class="field">
                         <label class="label">Digital adoption <span class="hint">· share traceable</span></label>
@@ -214,6 +215,7 @@
                                 min="0" max="100" value="{{ form_values.gst_filing_regularity or 85 }}">
                             <span class="input-suffix">%</span>
                         </div>
+                        <p class="help">Of the last 12 monthly GST returns, % filed by the due date (11/12 = 92%).</p>
                     </div>
                     <div class="field">
                         <label class="label">Invoices overdue</label>
@@ -222,6 +224,7 @@
                                 min="0" max="100" value="{{ form_values.overdue_invoice_ratio or 10 }}">
                             <span class="input-suffix">%</span>
                         </div>
+                        <p class="help">Share of issued invoices currently unpaid past their due date.</p>
                     </div>
                 </div>
             </div>
@@ -245,6 +248,7 @@
                                 min="0" max="100" value="{{ form_values.utility_ontime_ratio or 88 }}">
                             <span class="input-suffix">%</span>
                         </div>
+                        <p class="help">Of the last 12 electricity / water / phone bills, % paid by the due date.</p>
                     </div>
                     <div class="field">
                         <label class="label">Rent paid on time</label>
@@ -253,6 +257,7 @@
                                 max="100" value="{{ form_values.rent_ontime_ratio or 90 }}">
                             <span class="input-suffix">%</span>
                         </div>
+                        <p class="help">Of the last 12 months' rent, % paid on or before the due date.</p>
                     </div>
                 </div>
             </div>

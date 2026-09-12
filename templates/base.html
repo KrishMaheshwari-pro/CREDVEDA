@@ -15,8 +15,10 @@
     {% if session.get('logged_in') %}
     <style>{{ chatbot_assets.css|safe }}</style>
     {% endif %}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    {# Heavy JS libs used to load render-blocking in <head> on every page — chart.js
+       plus a ~1MB vis-network that only the applicant graph needs. They now load
+       at the end of <body> (chart.js below) or per-page (vis-network in
+       applicant_detail's head_extra), so pages paint immediately. #}
     {% block head_extra %}{% endblock %}
 </head>
 
@@ -202,6 +204,9 @@
     </script>
     {% if session.get('logged_in') %}
     <script>{{ chatbot_assets.js | safe }}</script>{% endif %}
+    {# chart.js loaded here at end of body (not in <head>) so page HTML paints
+       first; the per-page chart code in {% block scripts %} runs right after. #}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     {% block scripts %}{% endblock %}
 </body>
 

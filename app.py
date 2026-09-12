@@ -1412,16 +1412,40 @@ def lender_ops():
         return render_template("error.html", message=(
             "No portfolio data. Run database.py → data_ingestion.py → model_training.py → scoring.py first."))
 
+    # Vectorised severity + stats over the whole portfolio (the old per-row
+    # iterrows() pass cost ~1.7s on 4000 rows). guardrail_flags is stored as a
+    # JSON string, so severity is derived from a cheap substring test rather
+    # than parsing every row.
+    DISPLAY_CAP = 200
+    df = portfolio_df
+    gf = df["guardrail_flags"].fillna("[]") if "guardrail_flags" in df else pd.Series(["[]"] * len(df))
+    is_crit = gf.str.contains('"severity": "critical"', regex=False)
+    is_warn = (~is_crit) & gf.str.contains('"severity": "warning"', regex=False)
+    scores = df["credit_score"].astype(int)
+    completeness = df.get("data_completeness", pd.Series([0] * len(df))).fillna(0).astype(float)
+
+    ops_stats = {
+        "total": int(len(df)),
+        "approved": int(((scores >= config.APPROVAL_SCORE_THRESHOLD) & ~is_crit).sum()),
+        "critical": int(is_crit.sum()),
+        "warning": int(is_warn.sum()),
+        "thin_file": int((completeness < 0.5).sum()),
+        "avg_score": int(round(scores.mean())) if len(df) else 0,
+        "listable": int(((scores >= config.MARKETPLACE_MIN_SCORE) & ~is_crit).sum()),
+    }
+
+    # Only the top DISPLAY_CAP rows are rendered (critical first, then by score).
+    sev_rank = pd.Series(2, index=df.index)
+    sev_rank[is_warn] = 1
+    sev_rank[is_crit] = 0
+    order = pd.DataFrame({"_r": sev_rank, "_s": -scores}).sort_values(["_r", "_s"]).index[:DISPLAY_CAP]
+
     queue = []
-    for _, row in portfolio_df.iterrows():
-        try:
-            flags = json.loads(row.get("guardrail_flags", "[]") or "[]")
-        except Exception:
-            flags = []
-        severity = ("CRITICAL" if any(g["severity"] == "critical" for g in flags)
-                    else "WARNING" if any(g["severity"] == "warning" for g in flags)
-                    else "CLEAR")
-        tier_label, tier_tone = scoring.score_tier(int(row["credit_score"]))
+    for i in order:
+        row = df.loc[i]
+        severity = "CRITICAL" if is_crit[i] else ("WARNING" if is_warn[i] else "CLEAR")
+        cs = int(row["credit_score"])
+        tier_label, tier_tone = scoring.score_tier(cs)
         score_color = {"good": "#22c55e", "warn": "#f59e0b", "bad": "#ef4444"}.get(tier_tone, "#4f8cff")
         queue.append({
             "applicant_id": row["applicant_id"],
@@ -1429,52 +1453,20 @@ def lender_ops():
             "business_type": row.get("business_type", ""),
             "geography_tier": row.get("geography_tier", ""),
             "geography_state": row.get("geography_state", ""),
-            "credit_score": int(row["credit_score"]),
+            "credit_score": cs,
             "tier_label": tier_label,
             "tier_tone": tier_tone,
             "score_color": score_color,
-            "data_completeness": float(row.get("data_completeness", 0)),
+            "data_completeness": float(row.get("data_completeness", 0) or 0),
             "confidence_label": row.get("confidence_label", ""),
             "guardrail_severity": severity,
-            "guardrail_flags": flags,
             "requested_loan_amount": float(row.get("requested_loan_amount", 0) or 0),
-            "band_low": int(row.get("band_low", 0)),
-            "band_high": int(row.get("band_high", 0)),
-            "approved": (int(row["credit_score"]) >= config.APPROVAL_SCORE_THRESHOLD
-                         and severity != "CRITICAL"),
-            "listable": (int(row["credit_score"]) >= config.MARKETPLACE_MIN_SCORE
-                         and severity != "CRITICAL"),
+            "approved": (cs >= config.APPROVAL_SCORE_THRESHOLD and severity != "CRITICAL"),
+            "listable": (cs >= config.MARKETPLACE_MIN_SCORE and severity != "CRITICAL"),
         })
-    queue.sort(key=lambda x: (
-        {"CRITICAL": 0, "WARNING": 1, "CLEAR": 2}[x["guardrail_severity"]],
-        -x["credit_score"]
-    ))
-
-    ops_stats = {
-        "total": len(queue),
-        "approved": sum(1 for q in queue if q["approved"]),
-        "critical": sum(1 for q in queue if q["guardrail_severity"] == "CRITICAL"),
-        "warning": sum(1 for q in queue if q["guardrail_severity"] == "WARNING"),
-        "thin_file": sum(1 for q in queue if q["data_completeness"] < 0.5),
-        "avg_score": round(sum(q["credit_score"] for q in queue) / len(queue)) if queue else 0,
-        "listable": sum(1 for q in queue if q["listable"]),
-    }
-
-    # Cases explicitly flagged for field verification (from the assess page).
-    verify_items = []
-    conn = get_db_connection()
-    if conn:
-        try:
-            _ensure_verification_table(conn)
-            verify_items = [dict(r) for r in conn.execute(
-                "SELECT * FROM verification_queue WHERE status='pending' ORDER BY created_at DESC"
-            ).fetchall()]
-        finally:
-            conn.close()
 
     return render_template("lender_ops.html", queue=queue, stats=ops_stats,
-                           verify_items=verify_items,
-                           flagged=request.args.get("flagged"),
+                           shown=len(queue), total_apps=ops_stats["total"],
                            approval_threshold=config.APPROVAL_SCORE_THRESHOLD,
                            min_marketplace_score=config.MARKETPLACE_MIN_SCORE,
                            score_min=config.SCORE_MIN, score_max=config.SCORE_MAX)

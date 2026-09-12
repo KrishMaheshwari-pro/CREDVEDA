@@ -58,6 +58,7 @@
                     <div class="field">
                         <label class="label">Operating history <span class="hint">· months</span></label>
                         <input type="number" name="vintage_months" class="input" min="0" value="{{ form_values.vintage_months or 36 }}">
+                        <p class="help">How many months the business has been running / the person has earned an income.</p>
                     </div>
                 </div>
             </div>
@@ -78,6 +79,7 @@
                             <input type="number" name="avg_monthly_inflow" class="input" min="0" value="{{ form_values.avg_monthly_inflow or 0 }}">
                             <span class="input-suffix">₹</span>
                         </div>
+                        <p class="help">Average money received <strong>per month via bank / UPI</strong>, over the last 6 months.</p>
                     </div>
                     <div class="field">
                         <label class="label qo-lbl">
@@ -92,6 +94,7 @@
                             <input type="number" name="cash_monthly_inflow" class="input" min="0" value="{{ form_values.cash_monthly_inflow or 0 }}">
                             <span class="input-suffix">₹</span>
                         </div>
+                        <p class="help">Average <strong>cash income per month</strong> not routed through a bank (counter sales, cash payments), last 6 months.</p>
                     </div>
                     <div class="field">
                         <label class="label">Monthly expenses</label>
@@ -99,6 +102,7 @@
                             <input type="number" name="monthly_expenses" class="input" min="0" value="{{ form_values.monthly_expenses or 0 }}">
                             <span class="input-suffix">₹</span>
                         </div>
+                        <p class="help">Typical <strong>total outgoings per month</strong> — stock, rent, wages, utilities, household.</p>
                     </div>
                     <div class="field">
                         <label class="label">Payment bounce rate</label>
@@ -106,6 +110,7 @@
                             <input type="number" name="txn_bounce_rate" class="input" min="0" max="100" step="0.1" value="{{ form_values.txn_bounce_rate or 4 }}">
                             <span class="input-suffix">%</span>
                         </div>
+                        <p class="help">Share of auto-debits / cheques that <strong>bounced</strong> in the last 12 months (0 = none bounced).</p>
                     </div>
                 </div>
             </div>
@@ -126,10 +131,12 @@
                             <input type="number" name="existing_monthly_emi" class="input" min="0" value="{{ form_values.existing_monthly_emi or 0 }}">
                             <span class="input-suffix">₹/mo</span>
                         </div>
+                        <p class="help"><strong>Total EMI paid per month right now</strong> across all current loans (0 if none).</p>
                     </div>
                     <div class="field">
                         <label class="label">Open loans</label>
                         <input type="number" name="existing_loan_count" class="input" min="0" value="{{ form_values.existing_loan_count or 0 }}">
+                        <p class="help"><strong>Number of loans currently active</strong> (not yet fully repaid).</p>
                     </div>
                     <div class="field">
                         <label class="label qo-lbl">
@@ -144,6 +151,7 @@
                             <input type="number" name="gst_filing_regularity" class="input" min="0" max="100" value="{{ form_values.gst_filing_regularity or 85 }}">
                             <span class="input-suffix">%</span>
                         </div>
+                        <p class="help"><strong>Out of the last 12 monthly GST returns, what % were filed by the due date.</strong> e.g. 11 of 12 on time = 92%.</p>
                         <input type="hidden" name="gst_registered" value="{{ 'on' if form_values.get('gst_registered') else '' }}">
                     </div>
                     <div class="field">
@@ -159,6 +167,7 @@
                             <input type="number" name="utility_ontime_ratio" class="input" min="0" max="100" value="{{ form_values.utility_ontime_ratio or 88 }}">
                             <span class="input-suffix">%</span>
                         </div>
+                        <p class="help"><strong>Of the last 12 electricity / water / phone bills, what % were paid by the due date.</strong></p>
                     </div>
                 </div>
             </div>
@@ -172,9 +181,10 @@
                             <input type="number" name="requested_loan_amount" class="input" min="0" value="{{ form_values.requested_loan_amount or 100000 }}">
                             <span class="input-suffix">₹</span>
                         </div>
+                        <p class="help">Total loan the borrower is asking for.</p>
                     </div>
                     <div class="field">
-                        <label class="label">Tenure</label>
+                        <label class="label">Tenure <span class="hint">· repayment period</span></label>
                         <select name="requested_tenure_months" class="select">
                             {% for t in [12,18,24,36,48] %}
                             <option value="{{ t }}" {{ 'selected' if (form_values.requested_tenure_months|int)==t }}>{{ t }} months</option>{% endfor %}
