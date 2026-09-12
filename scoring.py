@@ -31,7 +31,7 @@ _DVI_FIELDS = {
     "src_gst":     ("business", 25),   # GST compliance — business only
     "src_utility": ("both",     10),   # utility / rent payment history
 }
-_SOURCE_CONFIDENCE = {"verified": 100, "estimated": 70, "self_declared": 40}
+_SOURCE_CONFIDENCE = {"verified": 100, "estimated": 70, "self_declared": 30}
 
 
 def compute_dvi(field_sources: dict, entity_type: str) -> int:
@@ -47,7 +47,7 @@ def compute_dvi(field_sources: dict, entity_type: str) -> int:
     for field, (applies_to, w) in _DVI_FIELDS.items():
         if applies_to == "business" and entity_type == "Individual":
             continue
-        conf = _SOURCE_CONFIDENCE.get(field_sources.get(field, "self_declared"), 40)
+        conf = _SOURCE_CONFIDENCE.get(field_sources.get(field, "self_declared"), 30)
         total_w += w
         weighted += w * conf
     return int(round(weighted / total_w)) if total_w else 40
