@@ -28,7 +28,7 @@
         <form method="post" class="card" id="assessForm">
 
             <!-- Returning borrower lookup -->
-            <div class="formsection" style="border-top:none;padding-top:0;margin-top:0;position:relative;z-index:60">
+            <div class="formsection" style="border-top:none;padding-top:0;margin-top:0;position:relative">
                 <div class="checkrow" style="padding-top:0">
                     <input type="checkbox" id="isReturning" onchange="toggleReturning()">
                     <label for="isReturning">This borrower already has a CredVeda score</label>
@@ -40,14 +40,14 @@
                         Search their Applicant ID to load the verified profile — history is carried over and
                         documents don't need re-verifying, so the score reflects everything you already know.
                     </p>
-                    <div style="position:relative;z-index:70">
+                    <div style="position:relative;z-index:5">
                         <div class="input-group">
                             <input type="text" id="borrowerSearch" class="input" autocomplete="off"
                                    placeholder="Search by Applicant ID (e.g. APP-00042)"
                                    oninput="searchBorrowers(this.value)">
                             <span class="input-suffix"><i class="fas fa-magnifying-glass"></i></span>
                         </div>
-                        <div id="borrowerResults" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:900;background:var(--card);border:1px solid var(--border);border-radius:10px;max-height:280px;overflow-y:auto;box-shadow:0 12px 32px rgba(0,0,0,.35)"></div>
+                        <div id="borrowerResults" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:40;background:var(--card);border:1px solid var(--border);border-radius:10px;max-height:280px;overflow-y:auto;box-shadow:0 12px 32px rgba(0,0,0,.35)"></div>
                     </div>
                     <div id="loadedBorrower" style="display:none;margin-top:.75rem"></div>
                 </div>

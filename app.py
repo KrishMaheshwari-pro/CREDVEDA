@@ -654,33 +654,10 @@ def simulate_advance():
 @app.route("/applicant/<applicant_id>/explanation")
 @login_required
 def applicant_explanation(applicant_id):
-    """The applicant-facing view of the same decision: no model jargon, no
-    SHAP values, no reason-code numbers -- just what was decided, the reasons
-    in second person, and what to do next. This is the artefact a lender would
-    actually hand the borrower to justify a rejection."""
-    if portfolio_df.empty or applicant_id not in set(portfolio_df["applicant_id"]):
-        return render_template("error.html", message=f"Applicant {applicant_id} not found."), 404
-
-    raw = portfolio_df.loc[portfolio_df["applicant_id"] == applicant_id].iloc[0].to_dict()
-    result = scoring.get_or_compute_full(applicant_id, raw, raw["entity_type"])
-    result = lifecycle.apply_repayment_history(applicant_id, result)
-    active = lifecycle.active_loan_for(applicant_id)
-    score_norm = int((result["credit_score"] - config.SCORE_MIN) / (config.SCORE_MAX - config.SCORE_MIN) * 100)
-    matched_products = get_eligible_products(score_norm, raw.get("business_type", ""), raw.get("gender", ""))
-    band = get_score_band_summary(score_norm)
-    thin_pathway = first_loan_pathway(result["credit_score"], result["data_completeness"])
-    return render_template(
-        "borrower_view.html",
-        applicant=raw,
-        result=result,
-        active_loan=active,
-        schedule=lifecycle.schedule_for(active["loan_id"]) if active else None,
-        matched_products=matched_products[:4],
-        band=band,
-        thin_pathway=thin_pathway,
-        score_min=config.SCORE_MIN, score_max=config.SCORE_MAX,
-        approval_threshold=config.APPROVAL_SCORE_THRESHOLD,
-    )
+    """'View as applicant' — show exactly what the borrower sees: the polished
+    public credit passport, not a separate internal duplicate. Kept as a route
+    so existing links/bookmarks still work."""
+    return redirect(url_for("credit_passport", applicant_id=applicant_id))
 
 
 @app.route("/api/applicant/<applicant_id>/explain")
@@ -932,10 +909,16 @@ def _ensure_verification_table(conn):
             dvi              INTEGER,
             reason           TEXT,
             unverified       TEXT,
+            form_data        TEXT,
             status           TEXT DEFAULT 'pending',
             created_at       TEXT
         )
     """)
+    # Existing tables (created before form_data) get the column added.
+    try:
+        conn.execute("ALTER TABLE verification_queue ADD COLUMN form_data TEXT")
+    except Exception:
+        pass
 
 
 @app.route("/send-to-verification", methods=["POST"])
@@ -1022,12 +1005,13 @@ def send_to_verification():
         conn.execute("""
             INSERT INTO verification_queue
             (vq_id, applicant_id, entity_type, business_type, requested_amount,
-             declared_score, effective_score, penalty, dvi, reason, unverified, status, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?)
+             declared_score, effective_score, penalty, dvi, reason, unverified, form_data, status, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)
         """, (str(uuid.uuid4())[:12], applicant_id, entity_type, f.get("business_type", ""),
               requested_loan_amount, result["credit_score"], result["adjusted_score"],
               verif_pen, result.get("dvi"), "Unverified must-prove data",
-              ", ".join(unverified), datetime.now(timezone.utc).isoformat()))
+              ", ".join(unverified), json.dumps(f.to_dict()),
+              datetime.now(timezone.utc).isoformat()))
         conn.commit()
     finally:
         conn.close()
@@ -1038,12 +1022,21 @@ def send_to_verification():
 @login_required
 def save_and_list():
     """Score form data, save to DB, and create a marketplace listing in one step."""
-    f = request.form
+    listing_id = _score_and_list_from_form(request.form, session.get("username"))
+    if not listing_id:
+        return redirect(url_for("apply_page"))
+    return redirect(url_for("marketplace_listing_detail", listing_id=listing_id))
 
+
+def _score_and_list_from_form(f, listed_by, applicant_id=None):
+    """Scores a form (request.form or a plain dict), and if it clears the
+    marketplace bar with no affordability critical, saves the score and creates
+    an open listing. Returns the new listing_id, or None if ineligible. Shared
+    by /save-and-list and the verification queue's verify-and-list action."""
     def num(name, default=0.0):
         try:
             return float(f.get(name, default) or default)
-        except ValueError:
+        except (ValueError, TypeError):
             return default
 
     entity_type = f.get("entity_type", "Small Business")
@@ -1114,9 +1107,9 @@ def save_and_list():
     eff_score = result.get("adjusted_score", result["credit_score"])
     critical_flags = [g for g in result.get("guardrail_flags", []) if g["severity"] == "critical"]
     if eff_score < config.MARKETPLACE_MIN_SCORE or critical_flags:
-        return redirect(url_for("apply_page"))
+        return None
 
-    applicant_id = "NEW-" + str(uuid.uuid4())[:8].upper()
+    applicant_id = applicant_id or f.get("returning_applicant_id") or ("NEW-" + str(uuid.uuid4())[:8].upper())
     # Rates are fixed, auto-computed server-side — not taken from the form, so
     # they can't be edited before listing. Lenders bargain on the marketplace.
     floor_rate = _risk_based_rate(eff_score)
@@ -1162,7 +1155,7 @@ def save_and_list():
              status, total_committed, interest_rate, borrower_email, borrower_phone,
              bank_offer_rate, bank_offer_collateral, bank_offer_collateral_detail)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'open',0,?,?,?,?,?,?)
-        """, (listing_id, applicant_id, session.get("username"),
+        """, (listing_id, applicant_id, listed_by,
               datetime.now(timezone.utc).isoformat(),
               requested_loan_amount, requested_tenure_months,
               result["credit_score"], tier_label,
@@ -1173,7 +1166,52 @@ def save_and_list():
     finally:
         conn.close()
 
-    return redirect(url_for("marketplace_listing_detail", listing_id=listing_id))
+    return listing_id
+
+
+@app.route("/verification/<vq_id>/verify-and-list", methods=["POST"])
+@login_required
+def verify_and_list(vq_id):
+    """Bank confirms the flagged data (borrower brought documents) and lists in
+    one step — no re-entering the form. The officer ticks which items are now
+    verified; those sources are flipped to 'verified', the file is re-scored,
+    and if it now clears the bar it's listed on the marketplace."""
+    conn = get_db_connection()
+    item = None
+    try:
+        _ensure_verification_table(conn)
+        row = conn.execute("SELECT * FROM verification_queue WHERE vq_id=?", (vq_id,)).fetchone()
+        item = dict(row) if row else None
+    finally:
+        conn.close()
+    if not item or not item.get("form_data"):
+        return redirect(url_for("lender_ops"))
+
+    data = json.loads(item["form_data"])
+    # Apply the officer's verification ticks (default: verify everything).
+    if request.form.get("verify_income", "on") == "on":
+        data["src_income_digital"] = "verified"
+        data["src_income_cash"] = "verified"
+    if request.form.get("verify_emi", "on") == "on":
+        data["src_emi"] = "verified"
+    if request.form.get("verify_gst", "on") == "on":
+        data["src_gst"] = "verified"
+    if request.form.get("verify_utility", "on") == "on":
+        data["src_utility"] = "verified"
+
+    listing_id = _score_and_list_from_form(data, session.get("username"),
+                                           applicant_id=item["applicant_id"])
+    # Mark the queue item resolved either way; if it listed, send them to it.
+    conn = get_db_connection()
+    try:
+        conn.execute("UPDATE verification_queue SET status=? WHERE vq_id=?",
+                     ("listed" if listing_id else "reviewed", vq_id))
+        conn.commit()
+    finally:
+        conn.close()
+    if listing_id:
+        return redirect(url_for("marketplace_listing_detail", listing_id=listing_id))
+    return redirect(url_for("lender_ops", reviewed=item["applicant_id"]))
 
 
 # --- Fairness / Responsible AI report -----------------------------------------

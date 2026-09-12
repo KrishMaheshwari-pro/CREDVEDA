@@ -29,9 +29,9 @@
             </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <a href="{{ url_for('applicant_explanation', applicant_id=applicant.applicant_id) }}"
+            <a href="{{ url_for('credit_passport', applicant_id=applicant.applicant_id) }}"
                 class="btn btn-ghost nowrap">
-                <i class="fas fa-user"></i> View as applicant
+                <i class="fas fa-id-card"></i> View credit passport
             </a>
             {% if active_loan %}
             <a href="{{ url_for('loan_detail', loan_id=active_loan['loan_id']) }}" class="btn btn-ghost nowrap">

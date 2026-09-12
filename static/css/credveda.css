@@ -146,13 +146,32 @@ small { font-size: .8125rem; }
 
 /* --- navigation ---------------------------------------------------------- */
 .nav {
-    position: sticky; top: 0; z-index: 100;
+    position: sticky; top: 0; z-index: 1000;
     height: var(--nav-h);
     display: flex; align-items: center;
     background: color-mix(in srgb, var(--bg) 82%, transparent);
     backdrop-filter: saturate(150%) blur(12px);
     border-bottom: 1px solid var(--border-soft);
 }
+/* Navbar dropdown (Tools / Reports) — solid, elevated, never bleeds page text */
+.nav-dd { position: relative; display: inline-block; }
+.nav-dd-menu {
+    display: none; position: absolute; top: calc(100% + 8px); left: 0;
+    min-width: 210px; z-index: 1200; padding: 6px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.35);
+}
+.nav-dd:hover .nav-dd-menu { display: block; }
+/* invisible hover bridge so the menu doesn't flicker on the gap */
+.nav-dd-menu::before { content: ""; position: absolute; top: -10px; left: 0; right: 0; height: 10px; }
+.nav-dd-item {
+    display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem;
+    font-size: .85rem; color: var(--text); text-decoration: none; border-radius: 8px;
+    white-space: nowrap;
+}
+.nav-dd-item:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.nav-dd-item i { width: 15px; text-align: center; color: var(--accent); }
+.nav-dd-caret { font-size: .6rem; opacity: .7; margin-left: .1rem; }
 .nav-inner { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; width: 100%;
              display: flex; align-items: center; gap: 28px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.0625rem;
