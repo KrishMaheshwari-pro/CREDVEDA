@@ -22,7 +22,7 @@ def get_chatbot_assets():
             <!-- Suggested questions will be dynamically added here -->
         </div>
         <div id="chatbot-input-container">
-            <input type="text" id="chatbot-input" placeholder="Type data signals (e.g. 'monthly revenue is 2 lakhs')..." aria-label="Chatbot Input">
+            <input type="text" id="chatbot-input" placeholder="Describe an applicant, or ask why a score is what it is…" aria-label="Chatbot Input">
             <button id="chatbot-send-btn" aria-label="Send Message">
                 <i class="fas fa-paper-plane"></i>
             </button>
@@ -89,6 +89,19 @@ def get_chatbot_assets():
     }
     .suggestion-btn:hover { border-color: var(--brand-line); color: var(--brand); }
 
+    .bot-message b { color: var(--text); }
+    .bot-message ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+
+    /* three-dot "thinking" pulse while the model scores */
+    .typing { display: inline-flex; gap: 4px; align-items: center; height: 1.1em; }
+    .typing i {
+        width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim);
+        display: inline-block; animation: cv-blink 1.25s infinite ease-in-out;
+    }
+    .typing i:nth-child(2) { animation-delay: .18s; }
+    .typing i:nth-child(3) { animation-delay: .36s; }
+    @keyframes cv-blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
     #chatbot-input-container {
         display: flex; gap: 8px; padding: 13px 14px;
         border-top: 1px solid var(--border-soft); background: var(--surface-2);
@@ -121,88 +134,140 @@ def get_chatbot_assets():
             return;
         }
 
-        const suggestedQuestions = [
-            "Revenue is 2 lakhs/mo and 30% digital. Score?",
-            "What if they also have a 650 bureau score?",
-            "Does paying GST regularly improve the score?"
+        // The applicant whose page we are on, if any. The server answers
+        // "why this score" / "how do they improve" from live data for them.
+        const pathMatch = window.location.pathname.match(
+            /\\/(?:applicant|passport|score-report|improvement|fundings)\\/([A-Za-z0-9_-]+)/);
+        const APPLICANT_ID = pathMatch ? pathMatch[1] : '';
+
+        // Conversation state lives here, not on the server, so the backend
+        // stays stateless across workers. `profile` accumulates the signals
+        // mentioned so far; `lastResult` lets the server report a delta.
+        let profile = {};
+        let lastResult = null;
+        let busy = false;
+
+        const GENERIC = [
+            "Kirana shop, revenue 2.5 lakhs/mo, 40% digital, GST filed",
+            "What if their bureau score was 720?",
+            "What data do you actually need?"
+        ];
+        const ON_APPLICANT = [
+            "Why this score?",
+            "How can they improve it?",
+            "Can they afford the loan?",
+            "Which schemes do they qualify for?"
+        ];
+        const FOLLOW_UP = [
+            "What if digital adoption were 80%?",
+            "What if they had no existing EMI?",
+            "How do they improve?",
+            "Which schemes now?"
         ];
 
-        function renderSuggestions() {
+        function renderSuggestions(list) {
             suggestionsContainer.innerHTML = '';
-            suggestedQuestions.forEach(q => {
+            list.forEach(q => {
                 const btn = document.createElement('button');
                 btn.className = 'suggestion-btn';
                 btn.textContent = q;
-                btn.addEventListener('click', () => {
-                    input.value = q;
-                    handleUserInput();
-                });
+                btn.addEventListener('click', () => { input.value = q; handleUserInput(); });
                 suggestionsContainer.appendChild(btn);
             });
-            suggestionsContainer.style.display = 'flex';
+            suggestionsContainer.style.display = list.length ? 'flex' : 'none';
         }
 
-        function hideSuggestions() {
-            suggestionsContainer.style.display = 'none';
-        }
+        function hideSuggestions() { suggestionsContainer.style.display = 'none'; }
 
-        let contextScore = 450; // Starting baseline
-
-        function getBotResponse(userInput) {
-            const lower = userInput.toLowerCase();
-            if (lower.includes("revenue") || lower.includes("lakhs") || lower.includes("digital")) {
-                contextScore += 180;
-                return `Got it! Injecting 2L/mo revenue with 30% digital footprint.<br><br><b>Provisional Score:</b> <span style="color:var(--good); font-weight:bold">${contextScore}</span><br><br><b>Explanation:</b> Demonstrable cash flow directly reduces default probability. The digital fraction makes it verifiable.`;
-            } else if (lower.includes("bureau") || lower.includes("650")) {
-                contextScore += 50;
-                return `Factoring in the 650 bureau score...<br><br><b>Provisional Score:</b> <span style="color:var(--good); font-weight:bold">${contextScore}</span><br><br><b>Explanation:</b> A thin but positive bureau file provides a small baseline boost to the alternative signals.`;
-            } else if (lower.includes("gst")) {
-                contextScore += 75;
-                return `Adding consistent GST history...<br><br><b>Provisional Score:</b> <span style="color:var(--good); font-weight:bold">${contextScore}</span><br><br><b>Explanation:</b> High GST regularity indicates formalized business practices and lowers risk significantly.`;
-            } else {
-                return "I'm listening. Tell me about the applicant's cash flow, digital adoption, GST regularity, or existing loan burdens to see how the score reacts.";
-            }
-        }
-
-        function addMessage(text, sender) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `chatbot-message ${sender}-message`;
-            messageDiv.innerHTML = text; // Use innerHTML to render potential links
-            messagesContainer.appendChild(messageDiv);
+        function addMessage(html, sender) {
+            const div = document.createElement('div');
+            div.className = `chatbot-message ${sender}-message`;
+            div.innerHTML = html;
+            messagesContainer.appendChild(div);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            return div;
         }
 
-        function handleUserInput() {
+        function showTyping() {
+            const div = addMessage(
+                '<span class="typing"><i></i><i></i><i></i></span>', 'bot');
+            div.id = 'typing-indicator';
+            return div;
+        }
+
+        // User text goes in as textContent, never as HTML -- the bot's own
+        // replies are trusted markup, but whatever is typed into the box is not.
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        async function handleUserInput() {
             const userInput = input.value.trim();
-            if (userInput) {
-                addMessage(userInput, 'user');
-                const botResponse = getBotResponse(userInput);
-                setTimeout(() => addMessage(botResponse, 'bot'), 500);
-                input.value = '';
-                hideSuggestions(); 
+            if (!userInput || busy) return;
+            busy = true;
+            addMessage(escapeHtml(userInput), 'user');
+            input.value = '';
+            hideSuggestions();
+            const typing = showTyping();
+
+            try {
+                const res = await fetch('/api/chatbot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: userInput,
+                        applicant_id: APPLICANT_ID,
+                        profile: profile,
+                        last_result: lastResult
+                    })
+                });
+                const data = await res.json();
+                typing.remove();
+                if (!res.ok) {
+                    addMessage(data.error || 'Something went wrong. Try again.', 'bot');
+                } else {
+                    addMessage(data.reply, 'bot');
+                    if (data.profile) profile = data.profile;
+                    lastResult = data.last_result || lastResult;
+                    const hasProfile = profile && Object.keys(profile).length > 0;
+                    renderSuggestions(hasProfile ? FOLLOW_UP
+                                    : (APPLICANT_ID ? ON_APPLICANT : GENERIC));
+                }
+            } catch (e) {
+                typing.remove();
+                addMessage('I could not reach the scoring service. Check the connection and try again.', 'bot');
+            } finally {
+                busy = false;
+                input.focus();
             }
+        }
+
+        function greet() {
+            if (messagesContainer.children.length > 0) return;
+            addMessage(
+                APPLICANT_ID
+                  ? `Hello. I'm the CredVeda underwriting assistant, running the real scoring model. ` +
+                    `I can see <b>${escapeHtml(APPLICANT_ID)}</b> on screen — ask me why they scored ` +
+                    `what they did, or describe a different applicant and I'll score them.`
+                  : `Hello. I'm the CredVeda underwriting assistant, and I run the real scoring model ` +
+                    `— describe an applicant in plain words and I'll score them, then change one ` +
+                    `detail and I'll tell you how much it moved.`,
+                'bot');
+            renderSuggestions(APPLICANT_ID ? ON_APPLICANT : GENERIC);
         }
 
         openBtn.addEventListener('click', () => {
             container.classList.remove('hidden');
-            if (messagesContainer.children.length <= 1) {
-                renderSuggestions();
-            }
+            greet();
+            input.focus();
         });
         closeBtn.addEventListener('click', () => container.classList.add('hidden'));
         sendBtn.addEventListener('click', handleUserInput);
         input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                handleUserInput();
-            }
+            if (e.key === 'Enter') handleUserInput();
         });
-        
-        setTimeout(() => {
-            if (messagesContainer.children.length === 0) {
-                 addMessage("Hello! I'm the AI Underwriting Assistant. You can dynamically test how alternative data signals affect an applicant's score here.", 'bot');
-                 renderSuggestions();
-            }
-        }, 1500);
     });
     """
     return {

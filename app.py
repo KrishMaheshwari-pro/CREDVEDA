@@ -26,6 +26,7 @@ import guardrails
 import lifecycle
 import scoring
 from chatbot import get_chatbot_assets
+import chatbot_brain
 from loan_product_matcher import get_eligible_products, get_score_band_summary
 from improvement_path import generate_improvement_path
 from thin_file_handler import first_loan_pathway, get_confidence_band, is_thin_file
@@ -2122,38 +2123,6 @@ def bank_proposals():
 
 
 # --- AI Underwriter Chatbot backend ------------------------------------------
-def _chatbot_fallback(msg: str) -> str:
-    msg = msg.lower()
-    if any(w in msg for w in ["score", "why", "reason", "factor", "drove"]):
-        return ("Your score is driven by payment reliability (utility/rent on-time rates), "
-                "cash-flow consistency, and digital transaction footprint. The Reason Codes "
-                "panel shows exactly which factors moved it and in which direction.")
-    if any(w in msg for w in ["improve", "better", "increase", "raise", "boost"]):
-        return ("The three fastest improvements are: (1) set up auto-pay for all utility bills, "
-                "(2) route more purchases through UPI to build a verifiable digital trail, and "
-                "(3) file GST returns on time if you run a business. The Improvement Plan tab "
-                "shows your personalised top-3 actions with estimated point gains.")
-    if any(w in msg for w in ["loan", "scheme", "mudra", "eligible", "product", "apply"]):
-        return ("Based on your score, the Loan Schemes section on your report shows eligible "
-                "government programmes — MUDRA Shishu/Kishore/Tarun, CGTMSE, and PM SVANidhi. "
-                "Each lists the maximum amount, rate, and where to apply.")
-    if any(w in msg for w in ["thin", "file", "band", "range", "confidence", "sparse"]):
-        return ("A range instead of a single number means limited data. Sharing 6 months of "
-                "bank statements, GST returns, or utility bills will usually narrow the band "
-                "and lift the midpoint. The Confidence section explains what's missing.")
-    if any(w in msg for w in ["fair", "bias", "gender", "geography", "discriminat"]):
-        return ("Gender, geography, and business type are never model inputs — they're "
-                "withheld entirely and used only in the Fairness Audit to check outcomes. "
-                "If any group shows a lower approval rate, the audit flags it and traces "
-                "whether it's a thin-file effect or a proxy bias.")
-    if any(w in msg for w in ["market", "lender", "invest", "fund", "syndic"]):
-        return ("The Credit Marketplace lets any registered lender browse and co-fund "
-                "verified, scored applicants. Multiple lenders can share a single loan, "
-                "spreading risk and driving down rates for good borrowers.")
-    return ("I'm here to help with credit assessments, improvement steps, and loan products. "
-            "Ask me why a score was given, how to raise it, or what schemes you qualify for.")
-
-
 @app.route("/api/chatbot", methods=["POST"])
 @login_required
 def api_chatbot():
@@ -2166,10 +2135,25 @@ def api_chatbot():
 
     # Build applicant context block if on a specific applicant page
     context_block = ""
+    applicant_ctx = None
     if applicant_id and not portfolio_df.empty and applicant_id in set(portfolio_df["applicant_id"]):
         try:
             raw = portfolio_df.loc[portfolio_df["applicant_id"] == applicant_id].iloc[0].to_dict()
             result = scoring.get_or_compute_full(applicant_id, raw, raw["entity_type"])
+            # Structured twin of the prose block below: the local brain answers
+            # from these fields directly instead of re-deriving them from text.
+            applicant_ctx = {
+                "applicant_id": applicant_id,
+                "credit_score": result["credit_score"],
+                "tier_label": result["tier_label"],
+                "reason_codes": result.get("reason_codes", []),
+                "improvement_path": result.get("improvement_path", []),
+                "foir": result.get("foir", {}),
+                "business_type": raw.get("business_type", ""),
+                "gender": raw.get("gender", ""),
+                "approved": result.get("approved"),
+                "guardrail_flags": result.get("guardrail_flags", []),
+            }
             rc_labels = ", ".join(rc["label"] for rc in result.get("reason_codes", [])[:3])
             ip_labels = ", ".join(ip.get("label", ip.get("feature", "")) for ip in result.get("improvement_path", [])[:3])
             context_block = f"""
@@ -2203,9 +2187,23 @@ Your role:
 
 Rules: Answer in 3-5 clear sentences. Use ₹ for amounts. No ML jargon. If asked about the current applicant, use the context above. Be warm but precise."""
 
+    # The local brain runs the real model, so it owns every grounded question:
+    # scoring a described applicant, what-ifs, and anything about the applicant
+    # on screen. Those answers are computed from live data and must not be
+    # handed to a language model that would only paraphrase them -- or, with no
+    # API key configured, fall back to a canned paragraph.
+    brain = chatbot_brain.answer(user_message, applicant_ctx,
+                                 data.get("profile"), data.get("last_result"))
+    if brain["intent"] != "help":
+        return jsonify({"reply": brain["reply"], "source": "model",
+                        "profile": brain["profile"], "last_result": brain["last_result"],
+                        "intent": brain["intent"]})
+
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key or api_key.startswith("YOUR_"):
-        return jsonify({"reply": _chatbot_fallback(user_message), "source": "fallback"})
+        return jsonify({"reply": brain["reply"], "source": "local",
+                        "profile": brain["profile"], "last_result": brain["last_result"],
+                        "intent": brain["intent"]})
 
     try:
         resp = _requests.post(
@@ -2219,10 +2217,12 @@ Rules: Answer in 3-5 clear sentences. Use ₹ for amounts. No ML jargon. If aske
         )
         resp.raise_for_status()
         reply = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return jsonify({"reply": reply, "source": "gemini"})
+        return jsonify({"reply": reply, "source": "gemini", "profile": brain["profile"],
+                        "last_result": brain["last_result"], "intent": brain["intent"]})
     except Exception as exc:
-        return jsonify({"reply": _chatbot_fallback(user_message), "source": "fallback",
-                        "debug": str(exc)})
+        return jsonify({"reply": brain["reply"], "source": "local",
+                        "profile": brain["profile"], "last_result": brain["last_result"],
+                        "intent": brain["intent"], "debug": str(exc)})
 
 
 def _financing_offers(listing, commitments, blended_rate):
