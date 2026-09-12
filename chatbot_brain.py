@@ -428,8 +428,14 @@ def _score_reply(profile: dict, previous: dict | None) -> str:
     score, tier = res["credit_score"], res["tier_label"]
 
     head = ""
-    if previous and previous.get("credit_score") is not None:
-        delta = score - previous["credit_score"]
+    prev_score = None
+    if isinstance(previous, dict):
+        try:                              # the client round-trips this, so it
+            prev_score = int(previous.get("credit_score"))   # may be anything
+        except (TypeError, ValueError):
+            prev_score = None
+    if prev_score is not None:
+        delta = score - prev_score
         arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "▬")
         colour = "var(--good)" if delta > 0 else ("var(--bad)" if delta < 0 else "var(--text-dim)")
         head = (f"<div style='margin-bottom:.35rem;'>Re-scored with that change: "
