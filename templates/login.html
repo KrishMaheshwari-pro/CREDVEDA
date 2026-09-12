@@ -36,14 +36,16 @@
         </div>
 
         <div class="auth-card">
-            <!-- Portal tabs -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:1.5rem;">
+            <!-- Portal tabs. The selected tab gets a solid fill and #fff text;
+                 the unselected one stays on the card surface with dim text, so
+                 neither state relies on a colour that may be undefined. -->
+            <div class="portal-tabs">
                 <a href="{{ url_for('login', portal='bank') }}"
-                   style="display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem;font-size:.85rem;font-weight:{% if portal == 'bank' %}700{% else %}400{% endif %};text-decoration:none;background:{% if portal == 'bank' %}var(--brand){% else %}var(--bg-soft){% endif %};color:{% if portal == 'bank' %}#fff{% else %}var(--text-dim){% endif %};border-right:1px solid var(--border);">
+                   class="portal-tab {% if portal == 'bank' %}is-active is-bank{% endif %}">
                     <i class="fas fa-university"></i> Bank / NBFC
                 </a>
                 <a href="{{ url_for('login', portal='lender') }}"
-                   style="display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem;font-size:.85rem;font-weight:{% if portal == 'lender' %}700{% else %}400{% endif %};text-decoration:none;background:{% if portal == 'lender' %}var(--accent){% else %}var(--bg-soft){% endif %};color:{% if portal == 'lender' %}#fff{% else %}var(--text-dim){% endif %};">
+                   class="portal-tab {% if portal == 'lender' %}is-active is-lender{% endif %}">
                     <i class="fas fa-hand-holding-dollar"></i> Lender / Investor
                 </a>
             </div>
@@ -54,6 +56,11 @@
             <p class="muted mb-3" style="font-size:.9375rem">
                 {% if portal == 'lender' %}Sign in to browse the marketplace and commit funds.
                 {% else %}Sign in to score applicants and manage your portfolio.{% endif %}
+            </p>
+            <p class="help mb-3" style="margin-top:-.35rem">
+                <i class="fas fa-circle-info"></i>
+                Each account belongs to one portal — a bank login can't be used here
+                {%- if portal == 'lender' %} and vice versa{% endif %}.
             </p>
 
             <form method="post" action="{{ url_for('login', portal=portal) }}">
@@ -72,15 +79,16 @@
                     <label class="label" for="password">Password</label>
                     <input class="input" id="password" name="password" type="password" placeholder="••••••••" required>
                 </div>
-                <button class="btn btn-primary btn-block btn-lg mt-2" type="submit"
-                        style="{% if portal == 'lender' %}background:var(--accent);border-color:var(--accent);{% endif %}">
-                    Sign in
+                <button class="btn btn-block btn-lg mt-2 auth-submit {% if portal == 'lender' %}auth-submit-lender{% else %}auth-submit-bank{% endif %}"
+                        type="submit">
+                    Sign in as {% if portal == 'lender' %}Lender{% else %}Bank{% endif %}
                     {% if portal == 'lender' %}<i class="fas fa-hand-holding-dollar"></i>{% else %}<i class="fas fa-university"></i>{% endif %}
                 </button>
             </form>
 
             <p class="help center mt-3 mb-0">
-                No account yet? <a href="{{ url_for('signup') }}">Create one</a> — local demo, no email needed.
+                No {% if portal == 'lender' %}lender{% else %}bank{% endif %} account yet?
+                <a href="{{ url_for('signup', portal=portal) }}">Create one</a> — local demo, no email needed.
             </p>
             <p class="help center mb-0">
                 <a href="{{ url_for('borrower_portal') }}" style="color:var(--good)">

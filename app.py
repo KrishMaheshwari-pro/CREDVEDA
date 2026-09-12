@@ -22,11 +22,26 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 
 import config
 import fairness
+import guardrails
 import lifecycle
 import scoring
 from chatbot import get_chatbot_assets
 from loan_product_matcher import get_eligible_products, get_score_band_summary
+from improvement_path import generate_improvement_path
 from thin_file_handler import first_loan_pathway, get_confidence_band, is_thin_file
+
+
+def _risk_based_rate(score) -> float:
+    """Risk-based annual interest rate (%) for a 300-900 credit score.
+
+    Single home for the pricing curve: the same expression was inlined in
+    seven places, so any change to the floor, ceiling or slope had to be made
+    seven times to stay consistent.
+    """
+    # The 42.0 intercept quoted an 850-score borrower 19.6% p.a.; the pricing
+    # table this curve is specified by wants 9.6% there (720 -> 13.1,
+    # 620 -> 16.0, 480 -> 19.4), all of which 32.0 reproduces.
+    return round(max(8.5, min(28.0, 32.0 - float(score) / 38.0)), 2)
 
 load_dotenv()
 
@@ -93,16 +108,90 @@ def verify_password(stored_password, provided_password):
     return stored_password == hash_password(provided_password)
 
 
+# Columns added to the marketplace tables after their original schema shipped.
+# Kept here (rather than only in database.py) because database.py DROPs
+# credit_scores, so it can't be re-run against a live DB just to pick up a
+# new column without throwing away every cached score.
+_LISTING_ADDED_COLUMNS = (
+    ("interest_rate", "REAL DEFAULT 12.0"),
+    ("borrower_email", "TEXT"),
+    ("borrower_phone", "TEXT"),
+    ("blended_rate", "REAL"),
+)
+_INTEREST_ADDED_COLUMNS = (
+    ("proposed_rate", "REAL"),
+    ("message", "TEXT"),
+)
+
+
 def _migrate_db():
-    """Add role column to users table if it doesn't already exist."""
+    """Bring an existing database up to the schema the app expects.
+
+    Idempotent and non-destructive: every statement is CREATE ... IF NOT
+    EXISTS or an ALTER whose "duplicate column" error is swallowed, so this
+    is safe to run on every boot.
+    """
     conn = get_db_connection()
     if not conn:
         return
     try:
-        conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'bank'")
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'bank'")
+        except sqlite3.OperationalError:
+            pass  # column already exists — safe to ignore
+
+        # The marketplace tables live in database.py, which is a manual
+        # one-shot script. A DB created before the marketplace shipped simply
+        # doesn't have them, and every marketplace/passport/applicant page
+        # then 500s on "no such table". Create them here instead.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS marketplace_listings (
+                listing_id       TEXT PRIMARY KEY,
+                applicant_id     TEXT NOT NULL,
+                listed_by        TEXT NOT NULL,
+                listed_at        TEXT NOT NULL,
+                amount_requested REAL NOT NULL,
+                tenure_months    INTEGER NOT NULL,
+                credit_score     INTEGER NOT NULL,
+                tier_label       TEXT,
+                entity_type      TEXT,
+                business_type    TEXT,
+                geography_tier   TEXT,
+                purpose          TEXT,
+                status           TEXT DEFAULT 'open',
+                total_committed  REAL DEFAULT 0.0,
+                fully_funded_at  TEXT,
+                interest_rate    REAL DEFAULT 12.0,
+                borrower_email   TEXT,
+                borrower_phone   TEXT,
+                blended_rate     REAL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS lender_interests (
+                interest_id       TEXT PRIMARY KEY,
+                listing_id        TEXT NOT NULL,
+                lender_username   TEXT NOT NULL,
+                committed_amount  REAL NOT NULL,
+                status            TEXT DEFAULT 'active',
+                created_at        TEXT NOT NULL,
+                proposed_rate     REAL,
+                message           TEXT
+            )
+        """)
+
+        # Tables that predate the rate-negotiation feature need the new columns.
+        for table, columns in (("marketplace_listings", _LISTING_ADDED_COLUMNS),
+                               ("lender_interests", _INTEREST_ADDED_COLUMNS)):
+            for column, decl in columns:
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists — safe to ignore
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_li_listing ON lender_interests(listing_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ml_status ON marketplace_listings(status)")
         conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists — safe to ignore
     finally:
         conn.close()
 
@@ -186,7 +275,16 @@ def login():
             error = "Username and password cannot be empty."
         else:
             role = authenticate_user(username, password)
-            if role:
+            if role and role != portal:
+                # The portal tab used to be decoration: the role comes from the
+                # account, so signing in under the Lender tab with a bank
+                # account silently landed on the bank home page and looked like
+                # both portals led to the same screen. Say so instead.
+                other = "Bank / NBFC" if role == "bank" else "Lender / Investor"
+                error = (f"'{username}' is a {other} account. "
+                         f"Switch to the {other} tab to sign in, "
+                         f"or create a separate account for this portal.")
+            elif role:
                 session["logged_in"] = True
                 session["username"] = username
                 session["role"] = role
@@ -201,10 +299,13 @@ def signup():
     if session.get("logged_in"):
         return redirect(url_for("home"))
     error = None
+    portal = request.args.get("portal", request.form.get("portal", "bank"))
+    if portal not in ("bank", "lender"):
+        portal = "bank"
     if request.method == "POST":
         username = request.form.get("username", "")
         password = request.form.get("password", "")
-        role = request.form.get("role", "bank")
+        role = request.form.get("role", portal)
         if role not in ("bank", "lender"):
             role = "bank"
         if not username or not password:
@@ -216,7 +317,7 @@ def signup():
             return redirect(url_for("marketplace") if role == "lender" else url_for("home"))
         else:
             error = "Username already exists. Please choose a different one."
-    return render_template("signup.html", error=error)
+    return render_template("signup.html", error=error, portal=portal)
 
 
 @app.route("/logout")
@@ -654,7 +755,7 @@ def apply_page():
     draft_id = None
     if result:
         score = result["credit_score"]
-        floor_rate = round(max(8.5, min(28.0, 42.0 - score / 38.0)), 2)
+        floor_rate = _risk_based_rate(score)
         critical_flags = [g for g in result.get("guardrail_flags", []) if g["severity"] == "critical"]
         is_listable = score >= config.MARKETPLACE_MIN_SCORE and not critical_flags
         score_gap = max(0, config.MARKETPLACE_MIN_SCORE - score)
@@ -735,7 +836,7 @@ def save_and_list():
         return redirect(url_for("apply_page"))
 
     applicant_id = "NEW-" + str(uuid.uuid4())[:8].upper()
-    floor_rate = round(max(8.5, min(28.0, 42.0 - result["credit_score"] / 38.0)), 2)
+    floor_rate = _risk_based_rate(result["credit_score"])
     interest_rate = min(28.0, max(8.5, float(f.get("interest_rate") or floor_rate)))
     purpose = f.get("purpose", "Working capital")
     borrower_email = (f.get("borrower_email") or "").strip()[:120]
@@ -974,6 +1075,170 @@ def lender_ops():
 
 
 # --- Score Report (printable) -------------------------------------------------
+def _app_data(applicant_id, raw):
+    """Header fields for the printable report templates.
+
+    They read app_data.business_type / .state / .monthly_revenue_avg as well
+    as .applicant_name; passing only the name left the rest Undefined, which
+    blew up on the "{:,.0f}".format(...) of the revenue line.
+    """
+    return {
+        "applicant_name": applicant_id,
+        "applicant_id": applicant_id,
+        "business_type": raw.get("business_type") or raw.get("entity_type") or "—",
+        "state": raw.get("geography_state") or raw.get("geography_tier") or "—",
+        "monthly_revenue_avg": float(raw.get("avg_monthly_inflow", 0) or 0),
+    }
+
+
+def _build_improvement_steps(result):
+    """Build the improvement block both score_report.html and
+    improvement_portal.html expect: the three actionable steps plus the
+    6-month trajectory used to draw the projection chart.
+
+    scoring.score_full() already produces an `improvement_path` list, but the
+    templates also need `projected_score` / `trajectory_scores` /
+    `trajectory_months`, which only improvement_path.generate_improvement_path()
+    computes. Both are combined here, keyed under every field-name alias the
+    two templates use between them.
+    """
+    factors = result.get("shap_factors") or []
+    score_norm = int((result["credit_score"] - config.SCORE_MIN)
+                     / (config.SCORE_MAX - config.SCORE_MIN) * 100)
+
+    traj = {}
+    if factors:
+        try:
+            traj = generate_improvement_path(
+                [float(f.get("contribution", 0) or 0) for f in factors],
+                [f.get("feature", "") for f in factors],
+                current_score=score_norm,
+            )
+        except Exception:
+            traj = {}
+
+    # Prefer scoring's richer narrative list; fall back to the trajectory
+    # module's own steps when the forest produced no actionable negatives.
+    path = result.get("improvement_path") or []
+    if path:
+        steps = [{
+            "feature": step.get("feature", ""),
+            "title": step.get("label", ""),
+            "action": step.get("narrative", ""),
+            "detail": step.get("narrative", ""),
+            "description": step.get("narrative", ""),
+            "difficulty": step.get("difficulty", "Moderate"),
+            "timeline": step.get("timeline", "~6 months"),
+            "score_gain": step.get("estimated_point_gain", 0),
+            "estimated_score_gain": step.get("estimated_point_gain", 0),
+        } for step in path]
+    else:
+        steps = [{
+            "feature": step.get("feature", ""),
+            "title": step.get("action", ""),
+            "action": step.get("action", ""),
+            "detail": step.get("action", ""),
+            "description": step.get("action", ""),
+            "difficulty": step.get("difficulty", "Moderate"),
+            "timeline": step.get("timeline", "~6 months"),
+            "score_gain": step.get("estimated_score_gain", 0),
+            "estimated_score_gain": step.get("estimated_score_gain", 0),
+        } for step in traj.get("steps", [])]
+
+    total_gain = sum(float(st.get("score_gain", 0) or 0) for st in steps)
+    block = {
+        "steps": steps,
+        "current_score": result["credit_score"],
+        "total_estimated_gain": round(total_gain, 1),
+        "projected_score": min(config.SCORE_MAX, int(result["credit_score"] + total_gain)),
+    }
+    if traj.get("trajectory_scores"):
+        # Trajectory comes back on the 0-100 scale; the charts are drawn in
+        # 300-900, so rescale before handing it to the template.
+        span = config.SCORE_MAX - config.SCORE_MIN
+        block["trajectory_scores"] = [
+            int(config.SCORE_MIN + (v / 100) * span) for v in traj["trajectory_scores"]
+        ]
+        block["trajectory_months"] = traj.get("trajectory_months", list(range(7)))
+        block["summary"] = traj.get("summary", "")
+        block["hindi_summary"] = traj.get("hindi_summary", "")
+    return block
+
+
+def _build_score_data(applicant_id, raw, result, matched):
+    """Adapt the scoring result to the contract score_report.html was written
+    against. The template reads a `score_data` object whose field names never
+    matched scoring.score_full()'s output (score vs credit_score, confidence vs
+    confidence_label, ...), so the page raised UndefinedError on every request.
+    Mapping here keeps the print template untouched."""
+    flags = result.get("guardrail_flags") or []
+    severity = ("CRITICAL" if any(g.get("severity") == "critical" for g in flags)
+                else "WARNING" if any(g.get("severity") == "warning" for g in flags)
+                else "CLEAR")
+
+    foir = result.get("foir") or {}
+    amount = float(raw.get("requested_loan_amount", 0) or 0)
+    tenure = int(raw.get("requested_tenure_months", 24) or 24)
+    rate = _risk_based_rate(result["credit_score"])
+    proposed_emi = guardrails.compute_emi(amount, rate, tenure) if amount else 0.0
+
+    # Percentile against the scored book, so "peer" means this lender's own
+    # portfolio rather than an abstract national curve.
+    percentile = None
+    if not portfolio_df.empty:
+        percentile = int(round(
+            (portfolio_df["credit_score"] < result["credit_score"]).mean() * 100))
+
+    tier = result.get("tier_label", "")
+    summary_en = (
+        f"Your score of {result['credit_score']} places you in the {tier} band. "
+        f"This was calculated from {int(round(result.get('data_completeness', 0) * 100))}% "
+        f"complete alternative data — payments, GST, utility and rent behaviour — "
+        f"with no reliance on a bureau file."
+    )
+    summary_hi = (
+        f"आपका स्कोर {result['credit_score']} है, जो {tier} श्रेणी में आता है। "
+        f"यह आपके भुगतान, जीएसटी, बिजली-पानी और किराए के व्यवहार से निकाला गया है — "
+        f"किसी ब्यूरो रिकॉर्ड की ज़रूरत नहीं।"
+    )
+
+    return {
+        "score": result["credit_score"],
+        "score_lower": result.get("band_low"),
+        "score_upper": result.get("band_high"),
+        "confidence": result.get("confidence_label", "Moderate confidence"),
+        "peer_percentile": percentile,
+        "guardrail_severity": severity,
+        "guardrail_flag": flags[0].get("message") if flags else None,
+        "proposed_emi": proposed_emi,
+        "total_dti": (foir.get("foir") or 0) * 100,
+        "plain_language_summary": summary_en,
+        "hindi_summary": summary_hi,
+        # score_report.html renders rc.impact numerically (`rc.impact > 0`,
+        # `| round(1)`, "pts"), but scoring emits impact as the string
+        # "positive"/"negative" and keeps the magnitude in `contribution`.
+        # Convert the contribution to score points on the 300-900 scale.
+        "reason_codes": [{
+            "code": rc.get("code", ""),
+            "short_text": rc.get("label", ""),
+            "borrower_text": rc.get("text", ""),
+            "hindi_text": rc.get("hindi_text", ""),
+            "impact": round(float(rc.get("contribution", 0) or 0)
+                            * (config.SCORE_MAX - config.SCORE_MIN), 1),
+            "direction": rc.get("impact", "neutral"),
+        } for rc in (result.get("reason_codes") or [])],
+        "improvement_steps": _build_improvement_steps(result),
+        "loan_products": [{
+            "name": prod.get("name", ""),
+            "description": prod.get("description", ""),
+            "max_amount": float(prod.get("max_loan_inr", 0) or 0),
+            "max_amount_display": prod.get("max_loan_display", ""),
+            "rate": prod.get("interest_rate", ""),
+            "tenure": prod.get("tenure", ""),
+        } for prod in matched],
+    }
+
+
 @app.route("/score-report/<applicant_id>")
 @login_required
 def score_report(applicant_id):
@@ -988,7 +1253,8 @@ def score_report(applicant_id):
     thin_pathway = first_loan_pathway(result["credit_score"], result["data_completeness"])
     return render_template("score_report.html", applicant=raw, result=result,
                            matched_products=matched[:4], band=band, thin_pathway=thin_pathway,
-                           app_data={"applicant_name": applicant_id},
+                           score_data=_build_score_data(applicant_id, raw, result, matched[:4]),
+                           app_data=_app_data(applicant_id, raw),
                            score_min=config.SCORE_MIN, score_max=config.SCORE_MAX,
                            approval_threshold=config.APPROVAL_SCORE_THRESHOLD)
 
@@ -1001,8 +1267,17 @@ def improvement_portal(applicant_id):
         return render_template("error.html", message=f"Applicant {applicant_id} not found."), 404
     raw = portfolio_df.loc[portfolio_df["applicant_id"] == applicant_id].iloc[0].to_dict()
     result = scoring.get_or_compute_full(applicant_id, raw, raw["entity_type"])
+    result = lifecycle.apply_repayment_history(applicant_id, result)
+    score_norm = int((result["credit_score"] - config.SCORE_MIN) / (config.SCORE_MAX - config.SCORE_MIN) * 100)
+    matched = get_eligible_products(score_norm, raw.get("business_type", ""), raw.get("gender", ""))
     return render_template("improvement_portal.html", applicant=raw, result=result,
-                           app_data={"applicant_name": applicant_id},
+                           band=get_score_band_summary(score_norm),
+                           score_data=_build_score_data(applicant_id, raw, result, matched[:4]),
+                           matched_products=matched[:4],
+                           thin_pathway=first_loan_pathway(
+                               result["credit_score"], result["data_completeness"]),
+                           app_data=_app_data(applicant_id, raw),
+                           approval_threshold=config.APPROVAL_SCORE_THRESHOLD,
                            score_min=config.SCORE_MIN, score_max=config.SCORE_MAX)
 
 
@@ -1099,7 +1374,7 @@ def marketplace_list_applicant(applicant_id):
         purpose = request.form.get("purpose", "Working capital")
         tier_label, _ = scoring.score_tier(result["credit_score"])
         score_norm = int((result["credit_score"] - config.SCORE_MIN) / (config.SCORE_MAX - config.SCORE_MIN) * 100)
-        floor_rate = round(max(8.5, min(28.0, 42.0 - result["credit_score"] / 38.0)), 2)
+        floor_rate = _risk_based_rate(result["credit_score"])
         interest_rate = float(request.form.get("interest_rate") or floor_rate)
         borrower_email = (request.form.get("borrower_email") or "").strip()[:120]
         borrower_phone = (request.form.get("borrower_phone") or "").strip()[:20]
@@ -1174,7 +1449,7 @@ def marketplace_listing_detail(listing_id):
     tier_label, tier_tone = scoring.score_tier(listing["credit_score"])
     listing["tier_label"] = tier_label
     listing["tier_tone"] = tier_tone
-    floor_rate = round(max(8.5, min(28.0, 42.0 - listing["credit_score"] / 38.0)), 2)
+    floor_rate = _risk_based_rate(listing["credit_score"])
 
     return render_template("marketplace_listing.html",
                            listing=listing, commitments=commitments,
@@ -1474,6 +1749,7 @@ def credit_passport(applicant_id):
 
     # Funding info from marketplace
     listing, commitments, blended_rate = None, [], None
+    pending_commitments, declined_commitments = [], []
     conn = get_db_connection()
     if conn:
         try:
@@ -1488,6 +1764,20 @@ def credit_passport(applicant_id):
                     "WHERE listing_id=? AND status='active' ORDER BY created_at",
                     (listing["listing_id"],)
                 ).fetchall()]
+                # Offers still waiting on the bank, and ones it turned down.
+                # The borrower could previously only see accepted money, so a
+                # lender asking for a higher rate — and the bank's answer —
+                # was invisible to the person whose loan it is.
+                pending_commitments = [dict(r) for r in conn.execute(
+                    "SELECT lender_username, committed_amount, proposed_rate, created_at, message "
+                    "FROM lender_interests WHERE listing_id=? AND status='pending' ORDER BY created_at",
+                    (listing["listing_id"],)
+                ).fetchall()]
+                declined_commitments = [dict(r) for r in conn.execute(
+                    "SELECT lender_username, committed_amount, proposed_rate, created_at "
+                    "FROM lender_interests WHERE listing_id=? AND status='rejected' ORDER BY created_at",
+                    (listing["listing_id"],)
+                ).fetchall()]
                 blended_rate = listing.get("blended_rate") or listing.get("interest_rate")
         finally:
             conn.close()
@@ -1498,7 +1788,28 @@ def credit_passport(applicant_id):
                                         blended_rate / 100))
 
     helped = [r for r in result.get("reason_codes", []) if r.get("impact") == "positive"][:3]
+    # The passport showed only what helped. Half an explanation invites the
+    # borrower to repeat whatever cost them points, so surface the negative
+    # reason codes too -- the plain-language borrower text, not the model
+    # internals (no SHAP chart, no anomaly flag, no "recommend decline").
+    held_back = [r for r in result.get("reason_codes", []) if r.get("impact") == "negative"][:3]
     improvement = result.get("improvement_path", [])[:3]
+
+    # Funding maths the borrower actually asks about: how much is still open.
+    funding = None
+    if listing:
+        asked = float(listing.get("amount_requested") or 0)
+        committed = float(listing.get("total_committed") or 0)
+        pending_total = sum(float(c.get("committed_amount") or 0) for c in pending_commitments)
+        funding = {
+            "asked": asked,
+            "committed": committed,
+            "remaining": max(0.0, asked - committed),
+            "pending_total": pending_total,
+            "pct": min(100, round(committed / asked * 100)) if asked else 0,
+            "n_lenders": len(commitments),
+            "n_pending": len(pending_commitments),
+        }
 
     return render_template("credit_passport.html",
                            applicant_id=applicant_id,
@@ -1511,7 +1822,11 @@ def credit_passport(applicant_id):
                            matched_products=matched_products[:3],
                            thin_pathway=thin_pathway,
                            helped=helped,
+                           held_back=held_back,
                            improvement=improvement,
+                           pending_commitments=pending_commitments,
+                           declined_commitments=declined_commitments,
+                           funding=funding,
                            score_min=config.SCORE_MIN, score_max=config.SCORE_MAX,
                            approval_threshold=config.APPROVAL_SCORE_THRESHOLD)
 
@@ -1624,7 +1939,7 @@ def bulk_assess():
 
             # Risk-based pricing
             score = res["credit_score"]
-            recommended_rate = round(max(8.5, min(28.0, 42.0 - score / 38.0)), 2)
+            recommended_rate = _risk_based_rate(score)
 
             critical_flags = [g for g in res.get("guardrail_flags", []) if g["severity"] == "critical"]
 
@@ -1685,7 +2000,7 @@ def api_pricing(applicant_id):
     raw = portfolio_df.loc[portfolio_df["applicant_id"] == applicant_id].iloc[0].to_dict()
     result = scoring.get_or_compute_full(applicant_id, raw, raw["entity_type"])
     score = result["credit_score"]
-    rate_mid = round(max(8.5, min(28.0, 42.0 - score / 38.0)), 2)
+    rate_mid = _risk_based_rate(score)
     rate_low = round(rate_mid - 0.75, 2)
     rate_high = round(rate_mid + 0.75, 2)
     ltv_cap = min(80, max(40, int((score - 300) / 6)))

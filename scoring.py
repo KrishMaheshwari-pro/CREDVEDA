@@ -433,6 +433,13 @@ def get_or_compute_full(applicant_id: str, raw: dict, entity_type: str) -> dict:
         if row and row[0] and row[0] != "[]":
             guardrails = json.loads(row[8])
             tier_label, tier_tone = score_tier(row[2])
+            # This branch must return the same keys as score_full(), or a
+            # template that renders fine on an applicant's first view breaks
+            # on the second one (marketplace_listing.html reads
+            # result.foir.foir unguarded). foir_assessment() is pure
+            # arithmetic over raw, so it is recomputed rather than cached;
+            # only the expensive tree walks come out of the DB.
+            band_width = max(0, int(row[6]) - int(row[5]))
             return {
                 "reason_codes": json.loads(row[0]),
                 "improvement_path": json.loads(row[1]),
@@ -447,6 +454,12 @@ def get_or_compute_full(applicant_id: str, raw: dict, entity_type: str) -> dict:
                 "band_first": row[7] < config.BAND_FIRST_COMPLETENESS,
                 "tier_label": tier_label,
                 "tier_tone": tier_tone,
+                "foir": foir_assessment(raw),
+                # None, not a clean verdict: the IsolationForest is not re-run
+                # on a cache hit, so "no flag" would be a claim we can't make.
+                # Templates guard with `result.anomaly and ...`.
+                "anomaly": None,
+                "band_width": band_width,
                 "approved": row[2] >= config.APPROVAL_SCORE_THRESHOLD and not any(
                     g["severity"] == "critical" for g in guardrails
                 ),
