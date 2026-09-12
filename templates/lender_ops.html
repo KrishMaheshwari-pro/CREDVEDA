@@ -394,14 +394,12 @@
                         </span>
                     </td>
                     <td style="white-space:nowrap;">
-                        <a href="{{ url_for('applicant_detail', applicant_id=app.applicant_id) }}" class="action-btn btn-view">
-                            <i class="fas fa-eye" style="margin-right:4px;"></i>Open
+                        <a href="{{ url_for('queue_open', applicant_id=app.applicant_id) }}" class="action-btn btn-view">
+                            <i class="fas fa-folder-open" style="margin-right:4px;"></i>Open
                         </a>
-                        {% if app.listable %}
-                        <a href="{{ url_for('marketplace') }}" class="action-btn btn-improve">
-                            <i class="fas fa-store" style="margin-right:4px;"></i>List
+                        <a href="{{ url_for('applicant_detail', applicant_id=app.applicant_id) }}" class="action-btn btn-improve">
+                            <i class="fas fa-eye" style="margin-right:4px;"></i>Detail
                         </a>
-                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

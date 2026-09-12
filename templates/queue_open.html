@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}{{ applicant_id }} — Review & verify — CredVeda{% endblock %}
+{% block head_extra %}
+<style>
+.src-select {
+    font-size:.72rem; padding:2px 6px; border-radius:6px; border:1px solid var(--border);
+    background:var(--bg-soft); color:var(--text-dim); cursor:pointer; flex-shrink:0;
+}
+.src-select:focus { border-color:var(--accent); outline:none; }
+.qo-bar-bg { height:8px; background:var(--border); border-radius:4px; overflow:hidden; flex:1; }
+.qo-bar-fill { height:100%; border-radius:4px; transition:width .6s ease; }
+.qo-lbl { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container" style="max-width:1060px;padding-top:1.5rem;padding-bottom:3rem;">
+
+    <div style="font-size:.8rem;color:var(--text-dim);margin-bottom:1rem;">
+        <a href="{{ url_for('lender_ops') }}" style="color:var(--accent);"><i class="fas fa-arrow-left"></i> Verification queue</a>
+        <span style="margin:0 .4rem;">›</span> {{ applicant_id }}
+    </div>
+
+    <div class="mb-3">
+        <h1 class="mb-1">Review &amp; verify — {{ applicant_id }}</h1>
+        <p class="muted mb-0" style="max-width:75ch">
+            This is the borrower's data on file. Edit any value, and switch the data sources the borrower has now
+            proven to <strong>🟢 Verified</strong>. Hit <strong>Recompute score</strong> — the verification penalty
+            lifts as you verify — then list to the marketplace right here if it qualifies.
+        </p>
+    </div>
+
+    <div class="grid {{ 'grid-side' if assessed else '' }}">
+
+        <!-- ============ EDITABLE FORM ============ -->
+        <form method="post" action="{{ url_for('queue_open', applicant_id=applicant_id) }}" class="card" id="qoForm">
+
+            <div class="formsection" style="border-top:none;padding-top:0;margin-top:0">
+                <div class="formsection-head"><span class="formsection-num">1</span><h3>Profile</h3></div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label">Entity type</label>
+                        <select name="entity_type" id="entity_type" class="select">
+                            <option value="Small Business" {{ 'selected' if form_values.entity_type=='Small Business' }}>Small Business</option>
+                            <option value="Individual" {{ 'selected' if form_values.entity_type=='Individual' }}>Individual</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label">Business / occupation</label>
+                        <input type="text" name="business_type" class="input" value="{{ form_values.business_type or '' }}">
+                    </div>
+                    <div class="field">
+                        <label class="label">Geography <span class="hint">· not scored</span></label>
+                        <select name="geography_tier" class="select">
+                            {% for t in ['Tier 1','Tier 2','Tier 3','Rural'] %}
+                            <option {{ 'selected' if form_values.geography_tier==t }}>{{ t }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label">Operating history <span class="hint">· months</span></label>
+                        <input type="number" name="vintage_months" class="input" min="0" value="{{ form_values.vintage_months or 36 }}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="formsection">
+                <div class="formsection-head"><span class="formsection-num">2</span><h3>Income</h3></div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label qo-lbl">
+                            <span>Digital / bank inflow</span>
+                            <select name="src_income_digital" class="src-select">
+                                <option value="verified" {{ 'selected' if form_values.get('src_income_digital')=='verified' }}>🟢 Verified</option>
+                                <option value="estimated" {{ 'selected' if form_values.get('src_income_digital')=='estimated' }}>🟡 Estimated</option>
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_income_digital','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                            </select>
+                        </label>
+                        <div class="input-group">
+                            <input type="number" name="avg_monthly_inflow" class="input" min="0" value="{{ form_values.avg_monthly_inflow or 0 }}">
+                            <span class="input-suffix">₹</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label qo-lbl">
+                            <span>Cash inflow</span>
+                            <select name="src_income_cash" class="src-select">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_income_cash','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated" {{ 'selected' if form_values.get('src_income_cash')=='estimated' }}>🟡 GST/invoice</option>
+                                <option value="verified" {{ 'selected' if form_values.get('src_income_cash')=='verified' }}>🟢 Field-verified</option>
+                            </select>
+                        </label>
+                        <div class="input-group">
+                            <input type="number" name="cash_monthly_inflow" class="input" min="0" value="{{ form_values.cash_monthly_inflow or 0 }}">
+                            <span class="input-suffix">₹</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Monthly expenses</label>
+                        <div class="input-group">
+                            <input type="number" name="monthly_expenses" class="input" min="0" value="{{ form_values.monthly_expenses or 0 }}">
+                            <span class="input-suffix">₹</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Payment bounce rate</label>
+                        <div class="input-group">
+                            <input type="number" name="txn_bounce_rate" class="input" min="0" max="100" step="0.1" value="{{ form_values.txn_bounce_rate or 4 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="formsection">
+                <div class="formsection-head"><span class="formsection-num">3</span><h3>Obligations &amp; compliance</h3></div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label qo-lbl">
+                            <span>Existing EMI</span>
+                            <select name="src_emi" class="src-select">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_emi','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated" {{ 'selected' if form_values.get('src_emi')=='estimated' }}>🟡 Estimated</option>
+                                <option value="verified" {{ 'selected' if form_values.get('src_emi')=='verified' }}>🟢 Verified</option>
+                            </select>
+                        </label>
+                        <div class="input-group">
+                            <input type="number" name="existing_monthly_emi" class="input" min="0" value="{{ form_values.existing_monthly_emi or 0 }}">
+                            <span class="input-suffix">₹/mo</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Open loans</label>
+                        <input type="number" name="existing_loan_count" class="input" min="0" value="{{ form_values.existing_loan_count or 0 }}">
+                    </div>
+                    <div class="field">
+                        <label class="label qo-lbl">
+                            <span>GST filed on time</span>
+                            <select name="src_gst" class="src-select">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_gst','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated" {{ 'selected' if form_values.get('src_gst')=='estimated' }}>🟡 Estimated</option>
+                                <option value="verified" {{ 'selected' if form_values.get('src_gst')=='verified' }}>🟢 GST portal</option>
+                            </select>
+                        </label>
+                        <div class="input-group">
+                            <input type="number" name="gst_filing_regularity" class="input" min="0" max="100" value="{{ form_values.gst_filing_regularity or 85 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                        <input type="hidden" name="gst_registered" value="{{ 'on' if form_values.get('gst_registered') else '' }}">
+                    </div>
+                    <div class="field">
+                        <label class="label qo-lbl">
+                            <span>Utility bills on time</span>
+                            <select name="src_utility" class="src-select">
+                                <option value="self_declared" {{ 'selected' if form_values.get('src_utility','self_declared')=='self_declared' }}>🔴 Self-declared</option>
+                                <option value="estimated" {{ 'selected' if form_values.get('src_utility')=='estimated' }}>🟡 Estimated</option>
+                                <option value="verified" {{ 'selected' if form_values.get('src_utility')=='verified' }}>🟢 Verified</option>
+                            </select>
+                        </label>
+                        <div class="input-group">
+                            <input type="number" name="utility_ontime_ratio" class="input" min="0" max="100" value="{{ form_values.utility_ontime_ratio or 88 }}">
+                            <span class="input-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="formsection">
+                <div class="formsection-head"><span class="formsection-num">4</span><h3>Loan request</h3></div>
+                <div class="grid grid-2" style="gap:0 16px">
+                    <div class="field">
+                        <label class="label">Requested amount</label>
+                        <div class="input-group">
+                            <input type="number" name="requested_loan_amount" class="input" min="0" value="{{ form_values.requested_loan_amount or 100000 }}">
+                            <span class="input-suffix">₹</span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Tenure</label>
+                        <select name="requested_tenure_months" class="select">
+                            {% for t in [12,18,24,36,48] %}
+                            <option value="{{ t }}" {{ 'selected' if (form_values.requested_tenure_months|int)==t }}>{{ t }} months</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <!-- carry the non-edited fields so scoring stays complete -->
+                {% for k in ['gender','digital_adoption_ratio','inflow_growth_rate_6m','inflow_volatility_cv','monthly_txn_count','overdue_invoice_ratio','rent_ontime_ratio','supplier_concentration_hhi','repeat_supplier_ratio'] %}
+                <input type="hidden" name="{{ k }}" value="{{ form_values.get(k, '') }}">
+                {% endfor %}
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg mt-2">
+                <i class="fas fa-bolt"></i> Recompute score
+            </button>
+        </form>
+
+        <!-- ============ RESULT ============ -->
+        {% if assessed %}
+        {% set r = assessed.result %}
+        <div>
+            <div class="card mb-3">
+                <div class="card-head"><p class="card-title mb-0">Updated score</p>
+                    <span class="chip {{ 'chip-good' if assessed.is_listable else ('chip-warn' if assessed.verify_to_unlock else 'chip-bad') }}">
+                        {{ 'Eligible' if assessed.is_listable else ('Verify to unlock' if assessed.verify_to_unlock else 'Below bar') }}
+                    </span>
+                </div>
+                <div style="display:flex;align-items:baseline;gap:.5rem;margin:.25rem 0 1rem">
+                    <span style="font-size:2.6rem;font-weight:800;color:var(--{{ r.tier_tone }})">{{ r.adjusted_score or r.credit_score }}</span>
+                    <span style="color:var(--text-dim)">/ 900 · {{ r.tier_label }}</span>
+                    {% if r.dvi_penalty %}
+                    <span style="margin-left:auto;font-size:.85rem;color:var(--bad)">declared {{ r.credit_score }} · −{{ r.dvi_penalty }} unverified</span>
+                    {% endif %}
+                </div>
+
+                {% if r.dvi is not none %}
+                {% set dcol = 'good' if r.dvi >= 80 else ('warn' if r.dvi >= 60 else 'bad') %}
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:.5rem">
+                    <span style="font-size:.8rem;color:var(--text-dim);white-space:nowrap">Data Verification</span>
+                    <div class="qo-bar-bg"><div class="qo-bar-fill" style="width:{{ r.dvi }}%;background:var(--{{ dcol }})"></div></div>
+                    <span style="font-size:.85rem;font-weight:700;color:var(--{{ dcol }})">{{ r.dvi }}/100</span>
+                </div>
+                {% endif %}
+
+                <div class="datarow"><dt>Indicative rate</dt><dd><strong style="color:var(--{{ r.tier_tone }})">{{ assessed.floor_rate }}% p.a.</strong></dd></div>
+                <div class="datarow" style="border-bottom:none"><dt>Indicative EMI</dt><dd>₹{{ '{:,.0f}'.format(r.computed_proposed_emi) }}/mo</dd></div>
+            </div>
+
+            <!-- Action -->
+            {% if assessed.foir_critical %}
+            <div class="card" style="border:1.5px solid var(--bad)">
+                <div class="alert alert-critical" style="margin:0">
+                    <span class="alert-icon"><i class="fas fa-ban"></i></span>
+                    <div class="alert-body"><p class="alert-title">Affordability breach</p>
+                        <p class="alert-text">EMIs exceed the safe income limit. Reduce the amount or extend the tenure — verification can't fix this.</p></div>
+                </div>
+            </div>
+            {% elif assessed.is_listable %}
+            <div class="card" style="border:1.5px solid var(--good)">
+                <div class="card-head" style="margin-bottom:.6rem">
+                    <p class="card-title mb-0" style="color:var(--good)"><i class="fas fa-store"></i> Ready to list</p>
+                </div>
+                <p class="muted" style="font-size:.875rem">Clears the {{ marketplace_min_score }} bar. Floor rate auto-set to <strong>{{ assessed.floor_rate }}%</strong>. Add a purpose and list.</p>
+                <form method="post" action="{{ url_for('save_and_list') }}">
+                    {% for k, v in form_values.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+                    <input type="hidden" name="returning_applicant_id" value="{{ applicant_id }}">
+                    <div class="field">
+                        <label class="label">Purpose</label>
+                        <select name="purpose" class="select">
+                            <option>Working capital</option><option>Equipment / machinery</option>
+                            <option>Trade finance</option><option>Shop expansion</option>
+                            <option>Personal — education</option><option>Personal — medical</option>
+                        </select>
+                    </div>
+                    <div class="checkrow">
+                        <input type="checkbox" name="bank_direct_offer" id="bank_direct_offer" checked>
+                        <label for="bank_direct_offer">Also extend the bank's own direct offer (collateral required)</label>
+                    </div>
+                    <input type="hidden" name="bank_offer_collateral" value="1">
+                    <button type="submit" class="btn btn-primary btn-block mt-2" style="background:var(--good);border-color:var(--good)">
+                        <i class="fas fa-store"></i> Send to marketplace
+                    </button>
+                </form>
+            </div>
+            {% elif assessed.verify_to_unlock %}
+            <div class="card" style="border:1.5px solid var(--brand)">
+                <div class="alert alert-warn" style="margin:0">
+                    <span class="alert-icon"><i class="fas fa-shield-halved"></i></span>
+                    <div class="alert-body"><p class="alert-title">Would qualify if verified</p>
+                        <p class="alert-text">Declared score {{ r.credit_score }} clears the bar, but unverified data (🔴) holds it at {{ r.adjusted_score }}. Switch the proven sources to 🟢 Verified above and recompute — it then lists instantly.</p></div>
+                </div>
+            </div>
+            {% else %}
+            <div class="card" style="border:1.5px solid var(--warn)">
+                <div class="alert alert-warn" style="margin:0">
+                    <span class="alert-icon"><i class="fas fa-lock"></i></span>
+                    <div class="alert-body"><p class="alert-title">{{ assessed.score_gap }} points short</p>
+                        <p class="alert-text">Below the {{ marketplace_min_score }} marketplace minimum even fully verified. This is a genuine credit shortfall.</p></div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

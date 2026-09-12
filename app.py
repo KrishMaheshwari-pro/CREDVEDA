@@ -1046,6 +1046,95 @@ def save_and_list():
     return redirect(url_for("marketplace_listing_detail", listing_id=listing_id))
 
 
+def _assess_from_form(f):
+    """Scores a form-like mapping (request.form or a plain dict) with the same
+    income-split, DVI and verification-penalty logic as the assess page, and
+    returns the result plus the derived listing flags. Shared by the in-queue
+    borrower editor so it stays consistent with /apply without duplicating it."""
+    def num(name, default=0.0):
+        try:
+            return float(f.get(name, default) or default)
+        except (ValueError, TypeError):
+            return default
+
+    entity_type = f.get("entity_type", "Small Business")
+    is_business = entity_type == "Small Business"
+    digital_inflow = max(num("avg_monthly_inflow", 20000), 0.0)
+    cash_inflow = max(num("cash_monthly_inflow", 0), 0.0)
+    avg_monthly_inflow = max(digital_inflow + cash_inflow, 1.0)
+    income_confidence = scoring.blend_income_confidence(
+        digital_inflow, f.get("src_income_digital", "verified"),
+        cash_inflow, f.get("src_income_cash", "self_declared"),
+    )
+    monthly_expenses = num("monthly_expenses", avg_monthly_inflow * 0.65)
+    net_cashflow = max(avg_monthly_inflow - monthly_expenses, 1500)
+    existing_monthly_emi = num("existing_monthly_emi", 0)
+    requested_loan_amount = num("requested_loan_amount", 100000)
+    requested_tenure_months = int(num("requested_tenure_months", 24))
+    proposed_emi = scoring.emi(requested_loan_amount, requested_tenure_months)
+    repayment_burden_ratio = (existing_monthly_emi + proposed_emi) / net_cashflow
+    gst_registered = 1 if (is_business and f.get("gst_registered") == "on") else 0
+    bureau_available = f.get("bureau_score_available") == "on"
+
+    raw = {
+        "avg_monthly_inflow": avg_monthly_inflow,
+        "inflow_growth_rate_6m": num("inflow_growth_rate_6m", 0) / 100.0,
+        "inflow_volatility_cv": num("inflow_volatility_cv", 20) / 100.0,
+        "monthly_txn_count": num("monthly_txn_count", 40),
+        "txn_bounce_rate": num("txn_bounce_rate", 5) / 100.0,
+        "digital_adoption_ratio": num("digital_adoption_ratio", 60) / 100.0,
+        "gst_registered": gst_registered,
+        "gst_filing_regularity": (num("gst_filing_regularity", 80) / 100.0) if gst_registered else None,
+        "overdue_invoice_ratio": (num("overdue_invoice_ratio", 10) / 100.0) if gst_registered else None,
+        "utility_ontime_ratio": num("utility_ontime_ratio", 85) / 100.0,
+        "rent_ontime_ratio": num("rent_ontime_ratio", 85) / 100.0,
+        "supplier_concentration_hhi": (num("supplier_concentration_hhi", 30) / 100.0) if is_business else None,
+        "repeat_supplier_ratio": (num("repeat_supplier_ratio", 60) / 100.0) if is_business else None,
+        "vintage_months": num("vintage_months", 24),
+        "existing_loan_count": int(num("existing_loan_count", 0)),
+        "bureau_score_available": 1 if bureau_available else 0,
+        "bureau_score_norm": ((num("bureau_score_raw", 650) - 300) / 600.0) if bureau_available else None,
+        "repayment_burden_ratio": repayment_burden_ratio,
+        "requested_loan_amount": requested_loan_amount,
+    }
+    income_tag = "verified" if income_confidence >= 85 else ("estimated" if income_confidence >= 55 else "self_declared")
+    field_sources = {
+        "src_income":  income_tag,
+        "src_emi":     f.get("src_emi",      "self_declared"),
+        "src_gst":     f.get("src_gst",      "self_declared"),
+        "src_utility": f.get("src_utility",  "self_declared"),
+    }
+    verif_pen = scoring.verification_penalty(
+        digital_amt=digital_inflow, digital_src=f.get("src_income_digital", "verified"),
+        cash_amt=cash_inflow, cash_src=f.get("src_income_cash", "self_declared"),
+        emi_amt=existing_monthly_emi, emi_src=f.get("src_emi", "self_declared"),
+        gst_registered=bool(gst_registered), gst_src=f.get("src_gst", "self_declared"),
+        utility_src=f.get("src_utility", "self_declared"), entity_type=entity_type,
+    )
+    result = scoring.score_full(raw, entity_type=entity_type, field_sources=field_sources,
+                                income_confidence=income_confidence, verif_penalty=verif_pen)
+    result["computed_proposed_emi"] = round(proposed_emi)
+    result["computed_net_cashflow"] = round(net_cashflow)
+
+    base_score = result["credit_score"]
+    adj_score = result.get("adjusted_score", base_score)
+    penalty = result.get("dvi_penalty", 0)
+    MIN = config.MARKETPLACE_MIN_SCORE
+    foir_critical = any("Data Verification Index" not in g.get("message", "")
+                        for g in result.get("guardrail_flags", []) if g["severity"] == "critical")
+    is_listable = (not foir_critical) and adj_score >= MIN
+    verify_to_unlock = (not foir_critical) and (not is_listable) and base_score >= MIN and penalty > 0
+    return {
+        "result": result,
+        "floor_rate": _risk_based_rate(adj_score),
+        "is_listable": is_listable,
+        "verify_to_unlock": verify_to_unlock,
+        "foir_critical": foir_critical,
+        "score_gap": max(0, MIN - base_score),
+        "can_verify": penalty > 0,
+    }
+
+
 def _score_and_list_from_form(f, listed_by, applicant_id=None):
     """Scores a form (request.form or a plain dict), and if it clears the
     marketplace bar with no affordability critical, saves the score and creates
@@ -1389,6 +1478,72 @@ def lender_ops():
                            approval_threshold=config.APPROVAL_SCORE_THRESHOLD,
                            min_marketplace_score=config.MARKETPLACE_MIN_SCORE,
                            score_min=config.SCORE_MIN, score_max=config.SCORE_MAX)
+
+
+@app.route("/queue/open/<applicant_id>", methods=["GET", "POST"])
+@login_required
+def queue_open(applicant_id):
+    """Self-contained borrower editor opened from the queue's Open button.
+    Loads the applicant's data editable in place; the officer can change any
+    value / mark sources verified, recompute the score, and list to the
+    marketplace — all here, without going to the assess board."""
+    conn = get_db_connection()
+    arow = None
+    try:
+        arow = conn.execute("SELECT * FROM applicants WHERE applicant_id=?", (applicant_id,)).fetchone()
+    finally:
+        conn.close()
+    if not arow:
+        return render_template("error.html", message=f"Applicant {applicant_id} not found."), 404
+    a = dict(arow)
+
+    if request.method == "POST":
+        form_values = request.form.to_dict()
+    else:
+        # Seed the editable form from the applicant's stored record. Sources
+        # start self-declared so the officer explicitly confirms what's proven.
+        form_values = {
+            "entity_type": a.get("entity_type"),
+            "business_type": a.get("business_type"),
+            "geography_tier": a.get("geography_tier"),
+            "gender": a.get("gender"),
+            "vintage_months": a.get("vintage_months"),
+            "avg_monthly_inflow": a.get("avg_monthly_inflow"),
+            "cash_monthly_inflow": 0,
+            "monthly_txn_count": a.get("monthly_txn_count"),
+            "txn_bounce_rate": _pct(a.get("txn_bounce_rate")),
+            "digital_adoption_ratio": _pct(a.get("digital_adoption_ratio")),
+            "inflow_growth_rate_6m": _pct(a.get("inflow_growth_rate_6m")),
+            "inflow_volatility_cv": _pct(a.get("inflow_volatility_cv")),
+            "gst_registered": "on" if a.get("gst_registered") else "",
+            "gst_filing_regularity": _pct(a.get("gst_filing_regularity")),
+            "overdue_invoice_ratio": _pct(a.get("overdue_invoice_ratio")),
+            "utility_ontime_ratio": _pct(a.get("utility_ontime_ratio")),
+            "rent_ontime_ratio": _pct(a.get("rent_ontime_ratio")),
+            "supplier_concentration_hhi": _pct(a.get("supplier_concentration_hhi")),
+            "repeat_supplier_ratio": _pct(a.get("repeat_supplier_ratio")),
+            "existing_loan_count": a.get("existing_loan_count"),
+            "existing_monthly_emi": a.get("existing_monthly_emi"),
+            "monthly_expenses": round((a.get("avg_monthly_inflow") or 0) * 0.65),
+            "requested_loan_amount": a.get("requested_loan_amount"),
+            "requested_tenure_months": int(a.get("requested_tenure_months") or 24),
+            "src_income_digital": "self_declared",
+            "src_income_cash": "self_declared",
+            "src_emi": "self_declared",
+            "src_gst": "self_declared",
+            "src_utility": "self_declared",
+        }
+
+    assessed = _assess_from_form(form_values) if request.method == "POST" else None
+    return render_template(
+        "queue_open.html",
+        applicant_id=applicant_id,
+        form_values=form_values,
+        business_type_choices=BUSINESS_TYPE_CHOICES,
+        assessed=assessed,
+        score_min=config.SCORE_MIN, score_max=config.SCORE_MAX,
+        marketplace_min_score=config.MARKETPLACE_MIN_SCORE,
+    )
 
 
 # --- Score Report (printable) -------------------------------------------------
